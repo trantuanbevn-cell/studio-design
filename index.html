@@ -1559,6 +1559,44 @@ function addMonth() {
   `);
 }
 
+async function _sbCopyMonthPhotos(prevMid, newMid, pjIdMap) {
+  if (!window._sbReady || !pjIdMap || !pjIdMap.length) return;
+  var BASE = 'https://kefwrfxeneropihedght.supabase.co/storage/v1/object/public/project-photos/';
+  for (var i = 0; i < pjIdMap.length; i++) {
+    var pair = pjIdMap[i];
+    var srcPath = prevMid + '/' + pair.prevId + '/slot_0.jpg';
+    var dstPath = newMid + '/' + pair.newId + '/slot_0.jpg';
+    try {
+      var dlRes = await _sb.storage.from('project-photos').download(srcPath);
+      if (dlRes.error || !dlRes.data) continue;
+      var upRes = await _sb.storage.from('project-photos').upload(dstPath, dlRes.data, { contentType: 'image/jpeg', upsert: true });
+      if (!upRes.error) {
+        await _sb.from('project_photos').upsert(
+          { project_id: pair.newId, slot: 0, storage_path: dstPath, month_id: newMid },
+          { onConflict: 'project_id,slot' }
+        );
+        if (!window._sbPhotosByProjectId) window._sbPhotosByProjectId = {};
+        if (!window._sbPhotosByProjectId[pair.newId]) window._sbPhotosByProjectId[pair.newId] = {};
+        window._sbPhotosByProjectId[pair.newId][0] = BASE + dstPath;
+      }
+    } catch(e) { console.warn('[Photo] copy slot_0 failed:', pair.prevId, e.message); }
+  }
+  var np = newMid.split('-'), nY = parseInt(np[0]), nM = parseInt(np[1]);
+  for (var mid in D.months) {
+    if (mid >= prevMid) continue;
+    var mp = mid.split('-'), mY = parseInt(mp[0]), mM = parseInt(mp[1]);
+    if ((nY - mY) * 12 + (nM - mM) <= 2) continue;
+    var pjs = (D.months[mid].projects||[]).concat(D.months[mid].projectsVN||[]);
+    for (var k = 0; k < pjs.length; k++) {
+      var pjId = pjs[k].id;
+      var paths = [];
+      for (var s = 0; s < 6; s++) paths.push(mid + '/' + pjId + '/slot_' + s + '.jpg');
+      try { await _sb.storage.from('project-photos').remove(paths); } catch(e) {}
+      try { await _sb.from('project_photos').delete().eq('project_id', pjId); } catch(e) {}
+    }
+  }
+}
+
 async function doAddMonth(prevMid, newMid) {
   const newMidStart = newMid + '-01';
   const todayStr = localDateStr(new Date()); // ngày tạo tháng mới
@@ -1568,6 +1606,7 @@ async function doAddMonth(prevMid, newMid) {
   [...(prevM.projects||[]), ...(prevM.projectsVN||[])].forEach(p => savePjToHistory(p));
 
   // ── Copy dự án sang tháng mới ──
+  var _pjIdMap = [];
   function copyProjects(srcList) {
     return srcList.map(p => {
       // Kiểm tra có timeline kéo sang tháng mới không
@@ -1599,8 +1638,10 @@ async function doAddMonth(prevMid, newMid) {
         })
       }));
 
+      var _newPjId = 'pj_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+      _pjIdMap.push({ prevId: p.id, newId: _newPjId });
       return {
-        id: 'pj_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        id: _newPjId,
         nameJP:    p.nameJP    || '',
         nameVN:    p.nameVN    || '',
         office:    p.office    || '',
@@ -1637,6 +1678,7 @@ async function doAddMonth(prevMid, newMid) {
   persistD();
   closeModal();
   renderAll();
+  if (window._sbReady) _sbCopyMonthPhotos(prevMid, newMid, _pjIdMap);
 
   const newPjCount = (D.months[newMid].projects.length) + (D.months[newMid].projectsVN.length);
   toast(`✓ Sang tháng ${monthLabel(newMid)} — ${newPjCount} dự án được copy, ảnh tháng cũ đã xóa`, 4000);
@@ -3481,6 +3523,14 @@ function renderProjectDetail(ci, p) {
 }
 
 /* PHOTOS */
+function getMonthForPj(pjId) {
+  for (var _mid in D.months) {
+    var _m = D.months[_mid];
+    if ((_m.projects||[]).some(function(x){return x.id===pjId;})) return _mid;
+    if ((_m.projectsVN||[]).some(function(x){return x.id===pjId;})) return _mid;
+  }
+  return D.activeMonth;
+}
 function renderPhotoSlots(p) {
   const photos=p.photos||[]; let html='';
   for(let i=0;i<6;i++){
@@ -3520,10 +3570,11 @@ function uploadPhoto(pjId, slot, input) {
             var b64 = compressed.replace(/^data:image\/\w+;base64,/, '');
             var raw = atob(b64); var buf = new Uint8Array(raw.length);
             for (var j = 0; j < raw.length; j++) buf[j] = raw.charCodeAt(j);
-            var sp = 'projects/' + pjId + '/slot_' + slot + '.jpg';
+            var _upMid = getMonthForPj(pjId);
+            var sp = _upMid + '/' + pjId + '/slot_' + slot + '.jpg';
             var upRes = await _sb.storage.from('project-photos').upload(sp, buf.buffer, { contentType: 'image/jpeg', upsert: true });
             if (!upRes.error) {
-              await _sb.from('project_photos').upsert({ project_id: pjId, slot: slot, storage_path: sp }, { onConflict: 'project_id,slot' });
+              await _sb.from('project_photos').upsert({ project_id: pjId, slot: slot, storage_path: sp, month_id: _upMid }, { onConflict: 'project_id,slot' });
               if (!window._sbPhotosByProjectId) window._sbPhotosByProjectId = {};
               if (!window._sbPhotosByProjectId[pjId]) window._sbPhotosByProjectId[pjId] = {};
               window._sbPhotosByProjectId[pjId][slot] = 'https://kefwrfxeneropihedght.supabase.co/storage/v1/object/public/project-photos/' + sp;
@@ -3543,7 +3594,9 @@ function delPhoto(pjId,slot) {
   if (window._sbReady) {
     (async function() {
       try {
-        var sp = 'projects/' + pjId + '/slot_' + slot + '.jpg';
+        var _BASE = 'https://kefwrfxeneropihedght.supabase.co/storage/v1/object/public/project-photos/';
+        var _cached = window._sbPhotosByProjectId && window._sbPhotosByProjectId[pjId] && window._sbPhotosByProjectId[pjId][slot];
+        var sp = (_cached && _cached.startsWith(_BASE)) ? _cached.slice(_BASE.length) : (getMonthForPj(pjId) + '/' + pjId + '/slot_' + slot + '.jpg');
         await _sb.storage.from('project-photos').remove([sp]);
         await _sb.from('project_photos').delete().eq('project_id', pjId).eq('slot', slot);
         if (window._sbPhotosByProjectId && window._sbPhotosByProjectId[pjId]) delete window._sbPhotosByProjectId[pjId][slot];
