@@ -882,6 +882,14 @@ async function sbPushAll() {
   });
   for (var _bi=0; _bi<_gRecs.length; _bi+=100) { try { await _sb.from('groups').upsert(_gRecs.slice(_bi,_bi+100), {onConflict:'id'}); } catch(e) { _errs.push('groups@'+_bi+': '+e.message); } }
   for (var _bj=0; _bj<_rRecs.length; _bj+=100) { try { await _sb.from('rows').upsert(_rRecs.slice(_bj,_bj+100), {onConflict:'id'}); } catch(e) { _errs.push('rows@'+_bj+': '+e.message); } }
+  // 4b. tl_tasks (per project)
+  var _tlRecs = []; var _stl = 0;
+  Object.values(D.months||{}).forEach(function(m){
+    [...(m.projects||[]),...(m.projectsVN||[])].forEach(function(p){
+      (p.tlTasks||[]).forEach(function(t){ _tlRecs.push({ id:t.id, project_id:p.id, lv:t.lv||'task', name:t.name||'', start_date:t.start||null, end_date:t.end||null, up_date:t.upDate||null, actual_date:t.actual||null, content:t.content||'', progress:t.progress||0, status:t.status||'', dep:t.dep||'', staff:t.staff||[], note:t.note||'', parent_group:t.parentGroup||null, sort_order:_stl++ }); });
+    });
+  });
+  for (var _btl=0; _btl<_tlRecs.length; _btl+=100) { try { await _sb.from('tl_tasks').upsert(_tlRecs.slice(_btl,_btl+100), {onConflict:'id'}); } catch(e) { _errs.push('tl_tasks@'+_btl+': '+e.message); } }
   // 5. Staff profiles
   var _stRecs = Object.entries(D.settings.staffProfiles||{}).map(function(kv){ var name=kv[0],prof=kv[1]; return { full_name:name, role:prof.role||'', salary_gross:prof.salaryGross||0, salary_net:prof.salaryNet||0, contract_end:prof.contractEnd||'', sort_order:prof.order||0 }; });
   if (_stRecs.length) try { await _sb.from('staff').upsert(_stRecs, {onConflict:'full_name'}); } catch(e) { _errs.push('staff: '+e.message); }
@@ -892,6 +900,7 @@ async function sbPushAll() {
 // Phase 5: Row debounce helper + column map
 const _sbRowDebounce = {};
 const _sbRowPending = {}; // merge mọi field change của 1 row trước khi ghi Supabase
+window._isSyncing = false; // ngăn Realtime ghi đè khi đang push/import
 function _sbSaveRowDebounced(groupId, rowId, colData) {
   if (!window._sbReady) return;
   // Tích lũy tất cả field thay đổi cho row này (fix: không bị mất field khi debounce)
@@ -7019,14 +7028,17 @@ function startRealtimeSync() {
   if (startRealtimeSync._channel) return;
   startRealtimeSync._channel = _sb.channel('db-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'rows' }, function(payload) {
+      if (window._isSyncing) return;
       applyRowChange(payload);
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, function(payload) {
+      if (window._isSyncing) return;
       if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
         sbLoadAll().then(function(d){ if(d){ D=d; try{localStorage.setItem(SK,JSON.stringify(D));}catch(e){} renderAll(); } }).catch(function(){});
       }
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'months' }, function(payload) {
+      if (window._isSyncing) return;
       sbLoadAll().then(function(d){ if(d){ D=d; try{localStorage.setItem(SK,JSON.stringify(D));}catch(e){} renderAll(); } }).catch(function(){});
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pending_changes' }, function(payload) {
@@ -7048,7 +7060,7 @@ function startRealtimeSync() {
 }
 
 function applyRowChange(payload) {
-  if (!payload) return;
+  if (!payload || window._isSyncing) return;
   var newRow = payload.new;
   var oldId = (payload.old||{}).id || (newRow||{}).id;
   if (!oldId) return;
@@ -7323,6 +7335,7 @@ function importBackup(input) {
       D = data; save(); renderAll();
       toast('✓ Đã tải backup. Đang sync lên Supabase…', 3000);
       if (window._sbReady) {
+        window._isSyncing = true;
         try {
           setSyncStatus('syncing', '⏳ Đang push…');
           const _pushErrs = await sbPushAll();
@@ -7339,6 +7352,8 @@ function importBackup(input) {
           setSyncStatus('error', '🔴');
           console.error('[importBackup] sync thất bại:', e2);
           toast('⚠ Backup lưu cục bộ OK nhưng chưa sync Supabase: ' + (e2.message||'').slice(0,40), 6000);
+        } finally {
+          window._isSyncing = false;
         }
       }
     } catch(err) { alert('Lỗi đọc file: ' + err.message); }
