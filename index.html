@@ -2104,6 +2104,11 @@ function renderProjectTimeline(pjs) {
     const allGrpRows = (p.groups||[]).filter(g => g.type || (g.rows||[]).some(r=>r.qty>0));
     const allDone = allGrpRows.length>0 && allGrpRows.every(g=>(g.rows||[]).filter(r=>r.dateTo).every(r=>r.doneAt)) && allGrpRows.some(g=>(g.rows||[]).some(r=>r.dateTo));
     const rowDim = allDone ? 'opacity:0.5' : '';
+    // Project-level pending check — dùng cho info panel VN (không phụ thuộc group đầu tiên)
+    const pjHasPendingUp = allGrpRows.some(g =>
+      (g.rows||[]).some(r => r.dateTo && !r.doneAt && r.dateTo >= todayStr)
+      || (!p._carryover && (g.rows||[]).some(r => r.dateTo && !r.doneAt))
+    );
     const carryoverBadge = p._carryover
       ? `<span style="font-size:7px;background:#f39c12;color:#fff;border-radius:3px;padding:1px 4px;margin-left:3px;vertical-align:middle">↩ T.cũ</span>`
       : '';
@@ -2201,7 +2206,11 @@ function renderProjectTimeline(pjs) {
       const vnInfoCell = (isVN && isFirstGrp)
         ? `<td rowspan="${allGrpRows.length}" style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>`
         : '';
-      return `<tr style="opacity:${grpOpacity}">
+      // VN first grpRow: info panel dùng project-level opacity, không phụ thuộc group đầu
+      const trOpacity = (isVN && isFirstGrp)
+        ? (allDone ? '0.55' : pjHasPendingUp ? '1' : '0.65')
+        : grpOpacity;
+      return `<tr style="opacity:${trOpacity}">
         ${vnInfoCell}
         ${!isVN ? `<td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>` : ''}
         <td style="padding:1px 4px 1px;border-bottom:${rowBorderB};border-right:${CB};${isVN?'border-left:'+CB+';':''}background:var(--table-bg);vertical-align:middle">
