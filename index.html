@@ -2953,6 +2953,16 @@ function deleteTlTask(pjId, taskId) {
   const relinkTasks = p.tlTasks.filter(t=>t.dep===taskId);
   relinkTasks.forEach(t=>{ t.dep = deletedTask.dep || ''; });
   p.tlTasks = p.tlTasks.filter(t=>t.id!==taskId);
+
+  // Xóa group phối cảnh tương ứng (group có tlTaskId = taskId)
+  var deletedGroup = null;
+  if (p.groups) {
+    deletedGroup = p.groups.find(g=>g.tlTaskId===taskId);
+    if (deletedGroup) {
+      p.groups = p.groups.filter(g=>g.tlTaskId!==taskId);
+    }
+  }
+
   save();
   // Cascade từ parent của task bị xóa (nếu có)
   var cascadedTasks = [];
@@ -2960,17 +2970,22 @@ function deleteTlTask(pjId, taskId) {
     cascadedTasks = cascadeTlTaskDeps(pjId, deletedTask.dep);
     if (cascadedTasks.length > 0) save();
   }
-  // Supabase: xóa task, upsert relinked + cascaded
+  // Supabase: xóa task, xóa group tương ứng, upsert relinked + cascaded
   if (window._sbReady) {
     _sb.from('tl_tasks').delete().eq('id', taskId)
       .then(function(r){ if(r.error) console.warn('[tl delete]', r.error.message); else console.log('[tl delete] OK:', taskId); });
+    if (deletedGroup) {
+      _sb.from('groups').delete().eq('id', deletedGroup.id)
+        .then(function(r){ if(r.error) console.warn('[tl del group]', r.error.message); });
+    }
     relinkTasks.forEach(function(t){ _sbUpsertTlTask(pjId, t); });
     cascadedTasks.forEach(function(t){ _sbUpsertTlTask(pjId, t); });
   }
   const ci = document.getElementById('content-inner') || document.getElementById('main-content');
   if(ci) renderProjectDetail(ci, p);
-  const _delMsg = (relinkTasks.length>0||cascadedTasks.length>0)
+  var _delMsg = (relinkTasks.length>0||cascadedTasks.length>0)
     ? ` — Đã nối lại ${relinkTasks.length} task, cập nhật ${cascadedTasks.length} task phụ thuộc` : '';
+  if (deletedGroup) _delMsg += ' — Đã xóa hạng mục "'+deletedGroup.type+'"';
   toast('✓ Đã xóa task'+_delMsg);
 }
 
@@ -3359,6 +3374,7 @@ function syncTlTaskToGroup(pjId, task) {
 
   const existingRows = grp.rows || [];
   const newRows = [];
+  const removedRows = []; // rows bị xóa (nhân sự bị bỏ khỏi task)
 
   task.staff.forEach(staffName => {
     const existingRow = existingRows.find(r => r.staff === staffName);
@@ -3378,20 +3394,30 @@ function syncTlTaskToGroup(pjId, task) {
         dateFrom: task.start || '',
         dateTo:   task.upDate || task.end || '',
         doneAt:   task.status==='done' ? (task.actual||localDateStr(new Date())) : '',
+        upTime:   '18:00',
         note:     '',
         ot:       0,
       });
     }
   });
 
-  // Giữ row của nhân sự không còn trong task
+  // Nhân sự bị bỏ khỏi task → xóa row tương ứng
   existingRows.forEach(r => {
-    if (!task.staff.includes(r.staff)) newRows.push(r);
+    if (!task.staff.includes(r.staff)) removedRows.push(r);
   });
 
   grp.rows = newRows;
   save();
-  console.log(`✓ Sync tlTask "${task.name}" → group trong "${p.nameVN||p.nameJP}", ${newRows.length} rows`);
+
+  // Xóa rows bị remove khỏi Supabase
+  if (window._sbReady && removedRows.length > 0) {
+    removedRows.forEach(r => {
+      _sb.from('rows').delete().eq('id', r.id)
+        .then(function(res){ if(res.error) console.warn('[syncTl] del row:', res.error.message); });
+    });
+  }
+
+  console.log(`✓ Sync tlTask "${task.name}" → group trong "${p.nameVN||p.nameJP}", ${newRows.length} rows${removedRows.length?' (-'+removedRows.length+' removed)':''}`);
 }
 
 function renderProjectTimeline_VN(p) {
@@ -3692,7 +3718,7 @@ function renderProjectDetail(ci, p) {
 
   <div class="card">
     <div class="card-hd">
-      <span class="card-hd-title">🎨 Hạng mục phối cảnh</span>
+      <span class="card-hd-title">${activeSection==='vn' ? '👥 Tiến độ nhân sự' : '🎨 Hạng mục phối cảnh'}</span>
       <button class="btn btn-gold btn-sm" onclick="addGroup('${p.id}')">＋ Thêm hạng mục</button>
     </div>
     <div style="overflow-x:auto">
@@ -4968,7 +4994,7 @@ function refreshStaffSched(pjId) {
 async function addGroup(pjId) {
   const p=getPj(pjId); if(!p) return;
   if(!p.groups) p.groups=[];
-  p.groups.push({id:gid(),type:'',rows:[{id:gid(),status:'new',staff:'',qty:0,note:'',ot:0,otNote:'',dateFrom:'',dateTo:'',rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,rate6:0,rate7:0,rate8:0}]});
+  p.groups.push({id:gid(),type:'',rows:[{id:gid(),status:'new',staff:'',qty:0,note:'',ot:0,otNote:'',dateFrom:'',dateTo:'',upTime:'18:00',rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,rate6:0,rate7:0,rate8:0}]});
   save(); rebuildGroups(pjId); refreshPjTotals(pjId);
   _sbAuditLog('create', 'groups', p.groups[p.groups.length-1] && p.groups[p.groups.length-1].id || '', 'Thêm hạng mục cho "' + (p.nameVN||p.nameJP||pjId) + '"');
   setTimeout(()=>{ const inputs=document.querySelectorAll(`#rbody-${pjId} .grp-hd .tbl-input-dark`); if(inputs.length) inputs[inputs.length-1].focus(); },50);
@@ -4992,7 +5018,7 @@ async function addGroup(pjId) {
 async function addRow(pjId,gid2) {
   const p=getPj(pjId); if(!p) return;
   const g=(p.groups||[]).find(g=>g.id===gid2); if(!g) return;
-  g.rows.push({id:gid(),status:'new',staff:'',qty:0,note:'',ot:0,otNote:'',dateFrom:'',dateTo:'',rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,rate6:0,rate7:0,rate8:0});
+  g.rows.push({id:gid(),status:'new',staff:'',qty:0,note:'',ot:0,otNote:'',dateFrom:'',dateTo:'',upTime:'18:00',rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,rate6:0,rate7:0,rate8:0});
   save(); rebuildGroups(pjId); refreshPjTotals(pjId);
   if (window._sbReady) {
     const r = g.rows[g.rows.length - 1];
