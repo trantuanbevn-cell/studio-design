@@ -2210,8 +2210,13 @@ function renderProjectTimeline(pjs) {
         <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:8px;font-weight:600;color:#27ae60;background:var(--table-bg);vertical-align:middle">${grpNew||''}</td>
         <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:8px;font-weight:600;color:#e67e22;background:var(--table-bg);vertical-align:middle">${grpRev||''}</td>
         ${dayCells}
-        <td style="padding:1px 5px;border-bottom:${rowBorderB};border-left:${CB};background:var(--table-bg);vertical-align:middle;max-width:90px;overflow:hidden">
-          ${notes.length?`<div style="font-size:7px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:88px;line-height:1.4" title="${x(notes.join(' | '))}">${x(notes.join(' | '))}</div>`:''}
+        <td style="padding:1px 5px;border-bottom:${rowBorderB};border-left:${CB};background:var(--table-bg);vertical-align:${isVN&&isFirstGrp?'top':'middle'};${isVN&&isFirstGrp?'min-width:100px':'max-width:90px;overflow:hidden'}">
+          ${(isVN&&isFirstGrp)
+            ? `<div style="line-height:1.8;padding-top:1px">
+                <div><span style="font-size:8px;font-weight:500;color:#64748b">KC&nbsp;</span><input type="date" class="vn-info-input" value="${x(p.constructionStart||'')}" style="font-size:8px;width:88px" onblur="savePjDetailField('${p.id}','constructionStart',this.value)"></div>
+                <div><span style="font-size:8px;font-weight:500;color:#64748b">HC&nbsp;</span><input type="date" class="vn-info-input" value="${x(p.constructionEnd||'')}" style="font-size:8px;width:88px" onblur="savePjDetailField('${p.id}','constructionEnd',this.value)"></div>
+               </div>`
+            : (notes.length?`<div style="font-size:7px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:88px;line-height:1.4" title="${x(notes.join(' | '))}">${x(notes.join(' | '))}</div>`:'')}
         </td>
       </tr>`;
     }).join('');
@@ -2245,7 +2250,7 @@ function renderProjectTimeline(pjs) {
         <th style="width:26px;padding:4px 3px;font-size:8px;font-weight:700;color:#7CFC00;border-bottom:${PB};border-right:${CB};text-align:right;white-space:nowrap">作成</th>
         <th style="width:26px;padding:4px 3px;font-size:8px;font-weight:700;color:#FFC000;border-bottom:${PB};border-right:${CB};text-align:right;white-space:nowrap">修正</th>
         ${dayHeaders}
-        <th style="padding:4px 5px;font-size:9px;color:rgba(255,255,255,.7);border-bottom:${PB};border-left:${CB};text-align:left;white-space:nowrap">Ghi chú</th>
+        <th style="padding:4px 5px;font-size:9px;color:rgba(255,255,255,.7);border-bottom:${PB};border-left:${CB};text-align:left;white-space:nowrap">${isVN?'KC / HC':'Ghi chú'}</th>
       </tr>
     </thead>
     <tbody>${rows||`<tr><td colspan="${allDays.length+5}" style="text-align:center;padding:16px;color:var(--gray4)">Chưa có dự án</td></tr>`}</tbody>
@@ -3473,39 +3478,31 @@ function renderVNInfoPanel(p) {
   const kd = kickoffDate ? kickoffDate.replace(/-/g,'/') : '—';
   const cd = completionDate ? completionDate.replace(/-/g,'/') : '—';
 
-  function lbl(t) { return `<span style="font-size:9px;color:#94a3b8;flex-shrink:0;white-space:nowrap">${t}&nbsp;</span>`; }
-  function inp(field, val, type, w) {
-    type = type||'text'; w = w||'65px';
+  function row(label, content) {
+    return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+      <span style="font-size:9px;font-weight:500;color:#64748b;white-space:nowrap;width:62px;flex-shrink:0">${label}</span>
+      <div style="flex:1;min-width:0">${content}</div>
+    </div>`;
+  }
+  function inp(field, val, type) {
+    type = type||'text';
     return `<input type="${type}" class="vn-info-input" value="${x(val||'')}" placeholder="—"
-      style="width:${w};flex-shrink:0" onblur="savePjDetailField('${p.id}','${field}',this.value)">`;
+      style="font-size:10px;color:var(--navy);font-weight:500" onblur="savePjDetailField('${p.id}','${field}',this.value)">`;
   }
 
   return `<div style="min-width:220px;max-width:260px;padding:5px 8px;background:#f8faff;border-right:2px solid #c7d2fe;box-sizing:border-box">
-    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:5px;overflow:hidden">
       <span style="background:${offBg};color:#fff;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;flex-shrink:0">${x(p.office||'VP')}</span>
       <span style="font-size:10px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x(p.nameVN||p.nameJP||'—')}</span>
     </div>
-    <div style="border-top:1px dashed #c7d2fe;margin:0 0 3px"></div>
-    <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;overflow:hidden">
-      ${lbl('CĐT')}${inp('client',p.client||p.contact,'text','62px')}
-      <span style="color:#ddd;flex-shrink:0">│</span>
-      ${lbl('Loại')}${inp('buildingType',p.buildingType,'text','55px')}
-    </div>
-    <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;overflow:hidden">
-      ${lbl('Phạm vi')}${inp('scope',p.scope,'text','55px')}
-      <span style="color:#ddd;flex-shrink:0">│</span>
-      ${lbl('DT')}${inp('area',p.area,'text','40px')}
-    </div>
-    <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;overflow:hidden">
-      ${lbl('↗KO')}<span style="font-size:10px;font-weight:600;color:#3b82f6;flex-shrink:0;white-space:nowrap">${kd}</span>
-      <span style="color:#ddd;flex-shrink:0">│</span>
-      ${lbl('↗HT')}<span style="font-size:10px;font-weight:600;color:#3b82f6;flex-shrink:0;white-space:nowrap">${cd}</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:3px;overflow:hidden">
-      ${lbl('KC')}${inp('constructionStart',p.constructionStart,'date','82px')}
-      <span style="color:#ddd;flex-shrink:0">│</span>
-      ${lbl('HC')}${inp('constructionEnd',p.constructionEnd,'date','82px')}
-    </div>
+    <div style="border-top:1px dashed #c7d2fe;margin:0 0 4px"></div>
+    ${row('CĐT', inp('client', p.client||p.contact))}
+    ${row('Loại CT', inp('buildingType', p.buildingType))}
+    ${row('Phạm vi TK', inp('scope', p.scope))}
+    ${row('Diện tích', inp('area', p.area))}
+    <div style="border-top:1px dashed #c7d2fe;margin:3px 0 4px"></div>
+    ${row('↗ Kickoff', `<span style="font-size:10px;font-weight:600;color:#3b82f6">${kd}</span>`)}
+    ${row('↗ Hoàn TK', `<span style="font-size:10px;font-weight:600;color:#3b82f6">${cd}</span>`)}
   </div>`;
 }
 
@@ -3569,11 +3566,6 @@ function renderProjectTimeline_VN(p) {
 
   const SC = {none:'#94a3b8',ip:'#3b82f6',done:'#22c55e',late:'#ef4444'};
   const SL = {none:'Chưa',ip:'Đang làm',done:'Xong',late:'Trễ'};
-
-  // ── Project info panel (spans all rows) ─────────────────────────────
-  const totalBodyRows = allTasks.length * 2; // each task → 1 task row + 1 insert row
-  const _infoPanelHTML = renderVNInfoPanel(p);
-  const pjInfoCell = `<td rowspan="${totalBodyRows}" style="vertical-align:top;padding:0;border-right:none">${_infoPanelHTML}</td>`;
 
   // ── Render 1 dòng task ───────────────────────────────────────────────
   function renderTaskRow(t, idx, isChild, groupId, prependCell) {
@@ -3695,12 +3687,10 @@ function renderProjectTimeline_VN(p) {
   // ── Build tất cả rows ─────────────────────────────────────────────────
   let rowNum = 0;
   let allRows = '';
-  let firstTaskDone = false;
   groups.forEach(g => {
     if (g.group) {
       rowNum++;
-      const pre = firstTaskDone ? '' : (firstTaskDone=true, pjInfoCell);
-      allRows += renderTaskRow(g.group, rowNum, false, null, pre);
+      allRows += renderTaskRow(g.group, rowNum, false, null, '');
       allRows += renderInsertRow(g.group.id);
       g.children.forEach(t => {
         rowNum++;
@@ -3710,8 +3700,7 @@ function renderProjectTimeline_VN(p) {
     } else {
       g.children.forEach(t => {
         rowNum++;
-        const pre = firstTaskDone ? '' : (firstTaskDone=true, pjInfoCell);
-        allRows += renderTaskRow(t, rowNum, false, null, pre);
+        allRows += renderTaskRow(t, rowNum, false, null, '');
         allRows += renderInsertRow(t.id);
       });
     }
@@ -3751,7 +3740,6 @@ function renderProjectTimeline_VN(p) {
     <div style="overflow-x:auto">
     <table style="border-collapse:collapse;width:100%;font-size:11px">
       <thead><tr style="background:var(--navy)">
-        <th style="color:#FFC000;padding:5px 8px;text-align:left;width:165px;min-width:140px">Thông tin dự án</th>
         <th style="color:rgba(255,255,255,.5);padding:5px 4px;text-align:center;width:24px">#</th>
         <th style="color:#FFC000;padding:5px 8px;text-align:left;min-width:200px">Công việc</th>
         <th style="color:rgba(255,255,255,.5);padding:5px 4px;text-align:center;width:46px">Ngày</th>
