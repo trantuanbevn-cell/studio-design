@@ -2108,15 +2108,11 @@ function renderProjectTimeline(pjs) {
       ? `<span style="font-size:7px;background:#f39c12;color:#fff;border-radius:3px;padding:1px 4px;margin-left:3px;vertical-align:middle">↩ T.cũ</span>`
       : '';
 
-    // Project name row (no timeline)
-    const _pjRowspan = 1 + allGrpRows.length;
-    const _pjCol1 = isVN
-      ? `<td rowspan="${_pjRowspan}" style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>`
-      : `<td style="padding:2px 4px 1px 4px;border-bottom:none;border-right:${CB};border-left:${CB};background:var(--table-bg)">
+    // Project name row — JP only; VN uses info panel in first grpRow (no redundant name row)
+    const pjRow = !isVN ? `<tr style="${rowDim}">
+      <td style="padding:2px 4px 1px 4px;border-bottom:none;border-right:${CB};border-left:${CB};background:var(--table-bg)">
            <span class="badge ${officeBadgeClass(p.office)}" style="font-size:8px;padding:1px 4px">${p.office||'—'}</span>
-         </td>`;
-    const pjRow = `<tr style="${rowDim}">
-      ${_pjCol1}
+         </td>
       <td style="padding:4px 4px 1px;border-bottom:none;border-right:${CB};background:var(--table-bg);max-width:175px;overflow:hidden">
         <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;cursor:pointer;color:${p._carryover?'#888':'var(--navy)'}"
           onclick="selectPj('${p.id}')" title="${x(p.nameVN||p.nameJP||'—')}">${x(p.nameVN||p.nameJP||'—')}${carryoverBadge}</div>
@@ -2132,10 +2128,11 @@ function renderProjectTimeline(pjs) {
         return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:none"><div style="height:8px"></div></td>`;
       }).join('')}
       <td style="border-bottom:none;border-left:${CB};background:var(--table-bg)"></td>
-    </tr>`;
+    </tr>` : '';
 
     // Group rows
     const grpRows = allGrpRows.map((g, gi) => {
+      const isFirstGrp = gi === 0;
       const isLastGrp = gi === allGrpRows.length - 1;
       const rowBorderB = isLastGrp ? PB : CB;
       const grpNew = (g.rows||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
@@ -2201,8 +2198,12 @@ function renderProjectTimeline(pjs) {
       // Ghi chú từ tất cả row trong hạng mục
       const notes = (g.rows||[]).map(r=>(r.note||'').trim()).filter(Boolean);
 
+      const vnInfoCell = (isVN && isFirstGrp)
+        ? `<td rowspan="${allGrpRows.length}" style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>`
+        : '';
       return `<tr style="opacity:${grpOpacity}">
-        ${isVN ? '' : `<td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>`}
+        ${vnInfoCell}
+        ${!isVN ? `<td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>` : ''}
         <td style="padding:1px 4px 1px;border-bottom:${rowBorderB};border-right:${CB};${isVN?'border-left:'+CB+';':''}background:var(--table-bg);vertical-align:middle">
           <div style="font-size:7px;color:${grpNameColor};font-weight:${grpNameWeight};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px;line-height:1.2;font-style:${grpAllDone?'italic':'normal'}">${x(g.type||'—')}${grpAllDone?' ✓':''}</div>
         </td>
@@ -2215,7 +2216,13 @@ function renderProjectTimeline(pjs) {
       </tr>`;
     }).join('');
 
-    return pjRow + grpRows;
+    const fallbackRow = (isVN && allGrpRows.length === 0) ? `<tr style="${rowDim}">
+      <td style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>
+      <td style="padding:4px 6px;border-bottom:${PB};border-right:${CB};color:#aaa;font-size:9px;font-style:italic;background:var(--table-bg)" colspan="3">Chưa có hạng mục</td>
+      ${allDays.map(ds=>{const dow=new Date(ds).getDay();const isToday=ds===todayStr,isHol=holidaySet.has(ds)||dow===0||dow===6;const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;const bg=isToday?'rgba(39,174,96,.07)':isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';const bL=isPrev?'1px solid #eee':CB;return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:${PB}"><div style="height:16px"></div></td>`;}).join('')}
+      <td style="border-bottom:${PB};border-left:${CB};background:var(--table-bg)"></td>
+    </tr>` : '';
+    return pjRow + grpRows + fallbackRow;
   }).join('');
 
   // Tổng chỉ tính dự án tháng hiện tại (không tính carryover từ tháng cũ)
@@ -2225,7 +2232,7 @@ function renderProjectTimeline(pjs) {
 
   return `<table style="border-collapse:collapse;width:max-content;min-width:100%;font-size:11px;border:1px solid #ccc">
     <colgroup>
-      <col style="width:${isVN?'175px':'34px'}">
+      <col style="width:${isVN?'240px':'34px'}">
       <col style="width:175px">
       <col style="width:26px"><col style="width:26px">
       ${allDays.map(()=>'<col style="width:14px">').join('')}
@@ -2234,7 +2241,7 @@ function renderProjectTimeline(pjs) {
     <thead>
       <tr style="background:var(--navy)">
         <th style="text-align:${isVN?'left':'center'};padding:4px ${isVN?'8':'3'}px;font-size:9px;color:${isVN?'#FFC000':'rgba(255,255,255,.7)'};border-bottom:${PB};border-right:${CB};white-space:nowrap">${isVN?'Thông tin dự án':'VP'}</th>
-        <th style="text-align:left;padding:4px 6px;font-size:9px;color:rgba(255,255,255,.9);border-bottom:${PB};border-right:${CB};white-space:nowrap">Dự án / Hạng mục</th>
+        <th style="text-align:left;padding:4px 6px;font-size:9px;color:rgba(255,255,255,.9);border-bottom:${PB};border-right:${CB};white-space:nowrap">${isVN?'Hạng mục':'Dự án / Hạng mục'}</th>
         <th style="width:26px;padding:4px 3px;font-size:8px;font-weight:700;color:#7CFC00;border-bottom:${PB};border-right:${CB};text-align:right;white-space:nowrap">作成</th>
         <th style="width:26px;padding:4px 3px;font-size:8px;font-weight:700;color:#FFC000;border-bottom:${PB};border-right:${CB};text-align:right;white-space:nowrap">修正</th>
         ${dayHeaders}
@@ -3463,38 +3470,42 @@ function renderVNInfoPanel(p) {
   const kickoffDate    = tlTasks.map(t=>t.start).filter(Boolean).sort()[0] || '';
   const completionDate = tlTasks.map(t=>t.end||t.upDate).filter(Boolean).sort().slice(-1)[0] || '';
   const offBg = (p.office==='Hà Nội'||p.office==='HAN'||p.office==='ハノイ') ? '#1a5276' : '#196f3d';
+  const kd = kickoffDate ? kickoffDate.replace(/-/g,'/') : '—';
+  const cd = completionDate ? completionDate.replace(/-/g,'/') : '—';
 
-  function inp(label, field, val, type, ph) {
-    ph = ph || 'nhập...';
-    type = type || 'text';
-    return `<div style="margin-bottom:5px">
-      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px">${label}</div>
-      <input type="${type}" class="vn-info-input" value="${x(val||'')}" placeholder="${ph}"
-        onblur="savePjDetailField('${p.id}','${field}',this.value)">
-    </div>`;
+  function lbl(t) { return `<span style="font-size:9px;color:#94a3b8;flex-shrink:0;white-space:nowrap">${t}&nbsp;</span>`; }
+  function inp(field, val, type, w) {
+    type = type||'text'; w = w||'65px';
+    return `<input type="${type}" class="vn-info-input" value="${x(val||'')}" placeholder="—"
+      style="width:${w};flex-shrink:0" onblur="savePjDetailField('${p.id}','${field}',this.value)">`;
   }
 
-  return `<div style="width:170px;min-width:150px;flex-shrink:0;padding:10px 8px;background:#f8faff;border-right:2px solid #c7d2fe;line-height:1.5">
-    <div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:8px;flex-wrap:wrap">
-      <span style="background:${offBg};color:#fff;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700;flex-shrink:0">${x(p.office||'VP')}</span>
-      <span style="font-size:11px;font-weight:600;color:var(--navy);line-height:1.3;word-break:break-word">${x(p.nameVN||p.nameJP||'—')}</span>
+  return `<div style="min-width:220px;max-width:260px;padding:5px 8px;background:#f8faff;border-right:2px solid #c7d2fe;box-sizing:border-box">
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;overflow:hidden">
+      <span style="background:${offBg};color:#fff;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;flex-shrink:0">${x(p.office||'VP')}</span>
+      <span style="font-size:10px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x(p.nameVN||p.nameJP||'—')}</span>
     </div>
-    <div style="border-top:1px dashed #c7d2fe;margin:0 0 8px"></div>
-    ${inp('CĐT', 'client', p.client||p.contact)}
-    ${inp('Loại CT', 'buildingType', p.buildingType)}
-    ${inp('Phạm vi TK', 'scope', p.scope)}
-    ${inp('Diện tích', 'area', p.area, 'text', 'm²')}
-    <div style="border-top:1px dashed #c7d2fe;margin:6px 0"></div>
-    <div style="margin-bottom:4px">
-      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em">↗ Kickoff TK</div>
-      <div style="font-weight:600;color:#3b82f6;font-size:10px">${kickoffDate?kickoffDate.replace(/-/g,'/'):'—'}</div>
+    <div style="border-top:1px dashed #c7d2fe;margin:0 0 3px"></div>
+    <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;overflow:hidden">
+      ${lbl('CĐT')}${inp('client',p.client||p.contact,'text','62px')}
+      <span style="color:#ddd;flex-shrink:0">│</span>
+      ${lbl('Loại')}${inp('buildingType',p.buildingType,'text','55px')}
     </div>
-    <div style="margin-bottom:6px">
-      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em">↗ Hoàn thành TK</div>
-      <div style="font-weight:600;color:#3b82f6;font-size:10px">${completionDate?completionDate.replace(/-/g,'/'):'—'}</div>
+    <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;overflow:hidden">
+      ${lbl('Phạm vi')}${inp('scope',p.scope,'text','55px')}
+      <span style="color:#ddd;flex-shrink:0">│</span>
+      ${lbl('DT')}${inp('area',p.area,'text','40px')}
     </div>
-    ${inp('Khởi công', 'constructionStart', p.constructionStart, 'date')}
-    ${inp('Hoàn công', 'constructionEnd', p.constructionEnd, 'date')}
+    <div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;overflow:hidden">
+      ${lbl('↗KO')}<span style="font-size:10px;font-weight:600;color:#3b82f6;flex-shrink:0;white-space:nowrap">${kd}</span>
+      <span style="color:#ddd;flex-shrink:0">│</span>
+      ${lbl('↗HT')}<span style="font-size:10px;font-weight:600;color:#3b82f6;flex-shrink:0;white-space:nowrap">${cd}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:3px;overflow:hidden">
+      ${lbl('KC')}${inp('constructionStart',p.constructionStart,'date','82px')}
+      <span style="color:#ddd;flex-shrink:0">│</span>
+      ${lbl('HC')}${inp('constructionEnd',p.constructionEnd,'date','82px')}
+    </div>
   </div>`;
 }
 
