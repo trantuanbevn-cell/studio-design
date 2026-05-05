@@ -2109,10 +2109,14 @@ function renderProjectTimeline(pjs) {
       : '';
 
     // Project name row (no timeline)
+    const _pjRowspan = 1 + allGrpRows.length;
+    const _pjCol1 = isVN
+      ? `<td rowspan="${_pjRowspan}" style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>`
+      : `<td style="padding:2px 4px 1px 4px;border-bottom:none;border-right:${CB};border-left:${CB};background:var(--table-bg)">
+           <span class="badge ${officeBadgeClass(p.office)}" style="font-size:8px;padding:1px 4px">${p.office||'—'}</span>
+         </td>`;
     const pjRow = `<tr style="${rowDim}">
-      <td style="padding:2px 4px 1px 4px;border-bottom:none;border-right:${CB};border-left:${CB};background:var(--table-bg)">
-        <span class="badge ${officeBadgeClass(p.office)}" style="font-size:8px;padding:1px 4px">${p.office||'—'}</span>
-      </td>
+      ${_pjCol1}
       <td style="padding:4px 4px 1px;border-bottom:none;border-right:${CB};background:var(--table-bg);max-width:175px;overflow:hidden">
         <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;cursor:pointer;color:${p._carryover?'#888':'var(--navy)'}"
           onclick="selectPj('${p.id}')" title="${x(p.nameVN||p.nameJP||'—')}">${x(p.nameVN||p.nameJP||'—')}${carryoverBadge}</div>
@@ -2198,8 +2202,8 @@ function renderProjectTimeline(pjs) {
       const notes = (g.rows||[]).map(r=>(r.note||'').trim()).filter(Boolean);
 
       return `<tr style="opacity:${grpOpacity}">
-        <td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>
-        <td style="padding:1px 4px 1px;border-bottom:${rowBorderB};border-right:${CB};background:var(--table-bg);vertical-align:middle">
+        ${isVN ? '' : `<td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>`}
+        <td style="padding:1px 4px 1px;border-bottom:${rowBorderB};border-right:${CB};${isVN?'border-left:'+CB+';':''}background:var(--table-bg);vertical-align:middle">
           <div style="font-size:7px;color:${grpNameColor};font-weight:${grpNameWeight};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px;line-height:1.2;font-style:${grpAllDone?'italic':'normal'}">${x(g.type||'—')}${grpAllDone?' ✓':''}</div>
         </td>
         <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:8px;font-weight:600;color:#27ae60;background:var(--table-bg);vertical-align:middle">${grpNew||''}</td>
@@ -2221,7 +2225,7 @@ function renderProjectTimeline(pjs) {
 
   return `<table style="border-collapse:collapse;width:max-content;min-width:100%;font-size:11px;border:1px solid #ccc">
     <colgroup>
-      <col style="width:34px">
+      <col style="width:${isVN?'175px':'34px'}">
       <col style="width:175px">
       <col style="width:26px"><col style="width:26px">
       ${allDays.map(()=>'<col style="width:14px">').join('')}
@@ -2229,7 +2233,7 @@ function renderProjectTimeline(pjs) {
     </colgroup>
     <thead>
       <tr style="background:var(--navy)">
-        <th style="text-align:center;padding:4px 3px;font-size:9px;color:rgba(255,255,255,.7);border-bottom:${PB};border-right:${CB};white-space:nowrap">VP</th>
+        <th style="text-align:${isVN?'left':'center'};padding:4px ${isVN?'8':'3'}px;font-size:9px;color:${isVN?'#FFC000':'rgba(255,255,255,.7)'};border-bottom:${PB};border-right:${CB};white-space:nowrap">${isVN?'Thông tin dự án':'VP'}</th>
         <th style="text-align:left;padding:4px 6px;font-size:9px;color:rgba(255,255,255,.9);border-bottom:${PB};border-right:${CB};white-space:nowrap">Dự án / Hạng mục</th>
         <th style="width:26px;padding:4px 3px;font-size:8px;font-weight:700;color:#7CFC00;border-bottom:${PB};border-right:${CB};text-align:right;white-space:nowrap">作成</th>
         <th style="width:26px;padding:4px 3px;font-size:8px;font-weight:700;color:#FFC000;border-bottom:${PB};border-right:${CB};text-align:right;white-space:nowrap">修正</th>
