@@ -1800,24 +1800,29 @@ function renderSidebar() {
       return from && to && from <= today && to >= today;
     });
 
-    // Hoàn thành: TẤT CẢ rows có dateTo đều đã UP (không phân biệt ngày deadline)
+    // Hoàn thành: TẤT CẢ rows có dateTo đều đã UP
     const isFullyDone = allRows.length > 0 && allRows.every(r => r.doneAt);
-    // Đang làm: có ít nhất 1 row đã UP nhưng chưa UP hết
-    const isActive = allRows.some(r => r.doneAt) && !isFullyDone;
+    // Có lịch UP hôm nay: có row dateTo = today và chưa doneAt
+    const hasTodayDeadline = allRows.some(r => r.dateTo === today && !r.doneAt);
+    // Đang làm: có row dateTo tương lai và chưa doneAt
+    const hasFutureDeadline = allRows.some(r => r.dateTo > today && !r.doneAt);
+    const isActive = hasTodayDeadline || hasFutureDeadline;
     const activeStaff = [...new Set(activeRows.map(r=>r.staff))];
 
     // Badge trạng thái
     let statusBadge = '';
     if (isFullyDone) {
       statusBadge = `<div style="position:absolute;top:5px;right:5px;background:#fff;border:1px solid #FFC000;border-radius:99px;padding:1px 5px;font-size:8px;font-weight:700;color:#FFC000">✓ Hoàn thành</div>`;
-    } else if (isActive) {
+    } else if (hasTodayDeadline) {
+      statusBadge = `<div style="position:absolute;top:5px;right:5px;background:#e74c3c;border-radius:99px;padding:1px 5px;font-size:8px;font-weight:700;color:#fff">⚡ Có lịch UP</div>`;
+    } else if (hasFutureDeadline) {
       statusBadge = `<div style="position:absolute;top:5px;right:5px;background:#27ae60;border-radius:99px;padding:1px 5px;font-size:8px;font-weight:700;color:#fff">● Đang làm</div>`;
     }
 
     // ── Phân loại mức độ ưu tiên hiển thị ──
     const allRowsAll = (p.groups||[]).flatMap(g=>g.rows||[]);
     const hasTodayUp  = allRowsAll.some(r => r.dateTo === today && !r.doneAt);
-    const hasFutureUp = allRowsAll.some(r => r.dateTo > today);
+    const hasFutureUp = allRowsAll.some(r => r.dateTo > today && !r.doneAt);
     const hasAnySchedule = allRowsAll.some(r => r.dateTo);
     const allUpped = hasAnySchedule && allRowsAll.filter(r=>r.dateTo).every(r=>r.doneAt);
 
@@ -4387,6 +4392,93 @@ function recalcStaffUpKPI(staffName) {
   });
 }
 
+function openUpRatingModal(pjId, gId, rowId, upLabel, timeStr) {
+  var pj = getPjGlobal(pjId) || getPj(pjId);
+  if (!pj) return;
+  var g = (pj.groups||[]).find(function(g){ return g.id===gId; });
+  if (!g) return;
+  var row = (g.rows||[]).find(function(r){ return r.id===rowId; });
+  if (!row) return;
+  var fields = typeof getRatingFields === 'function' ? getRatingFields() : [];
+  var grpA = fields.filter(function(rf){ return rf.group==='A'; });
+  var grpB = fields.filter(function(rf){ return rf.group==='B'; });
+  var grpC = fields.filter(function(rf){ return rf.group==='C'; });
+
+  function grpAvg(grpFields) {
+    var vals = grpFields.map(function(rf){ return row[rf.field]||0; }).filter(function(v){ return v>0; });
+    return vals.length ? Math.round(vals.reduce(function(a,b){ return a+b; },0)/vals.length) : 0;
+  }
+
+  var scoreColor = (upLabel.indexOf('SỚM')>=0||upLabel.indexOf('ĐÚNG')>=0) ? '#27ae60' : '#e74c3c';
+
+  function sliderRow(groupId, grpFields, emoji, label, color) {
+    var avg = grpAvg(grpFields);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f0f0f0">'
+      + '<span style="font-size:16px">'+emoji+'</span>'
+      + '<span style="min-width:80px;font-size:12px;font-weight:600;color:#333">'+label+'</span>'
+      + '<input type="range" min="0" max="10" step="1" value="'+avg+'" id="uprating-'+groupId+'"'
+      + ' style="flex:1;height:6px;cursor:pointer;accent-color:'+color+'"'
+      + ' oninput="(function(el){var v=+el.value;var d=document.getElementById(\'uprating-val-'+groupId+'\');if(d){d.textContent=v||\'–\';d.style.background=v>0?\''+color+'\':\'#ccc\';}})(this)">'
+      + '<div id="uprating-val-'+groupId+'" style="width:36px;height:36px;border-radius:50%;background:'+(avg>0?color:'#ccc')+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0">'
+      + (avg||'–')+'</div></div>';
+  }
+
+  var html = '<div style="max-width:420px">'
+    + '<div style="background:var(--navy);color:#fff;margin:-16px -16px 14px;padding:12px 16px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:10px">'
+    + '<span style="font-size:22px">✅</span>'
+    + '<div><div style="font-weight:700;font-size:13px">Đã UP lúc '+timeStr+'</div>'
+    + '<div style="font-size:11px;opacity:.8">'+x(pj.nameVN||pj.nameJP||'—')+' · '+x(g.type||'—')+' · '+x(row.staff||'—')+'</div></div>'
+    + '<span style="margin-left:auto;background:'+scoreColor+';border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700">'+upLabel+'</span></div>'
+    + '<div style="padding:0 2px;margin-bottom:12px">'
+    + '<div style="font-size:11px;color:#888;margin-bottom:10px;font-weight:600">📊 Đánh giá chất lượng (tuỳ chọn)</div>'
+    + sliderRow('A', grpA, '📐', 'Kỹ thuật', '#4472C4')
+    + sliderRow('B', grpB, '⚡', 'Năng lực', '#27ae60')
+    + sliderRow('C', grpC, '💼', 'Thái độ', '#9B59B6')
+    + '</div>'
+    + '<div class="modal-ft">'
+    + '<button class="btn" onclick="closeModal()">Bỏ qua</button>'
+    + '<button class="btn btn-gold" onclick="saveUpRating(\''+pjId+'\',\''+gId+'\',\''+rowId+'\')">💾 Đánh giá</button>'
+    + '</div></div>';
+
+  showModal(html);
+}
+
+function saveUpRating(pjId, gId, rowId) {
+  var pj = getPjGlobal(pjId) || getPj(pjId);
+  if (!pj) { closeModal(); return; }
+  var g = (pj.groups||[]).find(function(g){ return g.id===gId; });
+  if (!g) { closeModal(); return; }
+  var row = (g.rows||[]).find(function(r){ return r.id===rowId; });
+  if (!row) { closeModal(); return; }
+  var fields = typeof getRatingFields === 'function' ? getRatingFields() : [];
+  var hasVal = false;
+
+  ['A','B','C'].forEach(function(groupId) {
+    var el = document.getElementById('uprating-'+groupId);
+    var slVal = el ? (+el.value) : 0;
+    if (slVal > 0) {
+      fields.filter(function(rf){ return rf.group===groupId; }).forEach(function(rf){ row[rf.field] = slVal; });
+      hasVal = true;
+    }
+  });
+
+  if (hasVal) {
+    persistD();
+    if (window._sbReady) {
+      var rateData = {};
+      fields.forEach(function(rf){ if (row[rf.field]) rateData[rf.field] = row[rf.field]; });
+      _sb.from('rows').update(rateData).eq('id', rowId)
+        .then(function(r){ if (r.error) console.warn('[saveUpRating]', r.error.message); })
+        .catch(function(e){ console.warn('[saveUpRating]', e.message); });
+    }
+    var tbody = document.getElementById('rbody-' + pjId);
+    if (tbody) { var pp = getPjGlobal(pjId)||getPj(pjId); if (pp) tbody.innerHTML = renderGroups(pp); }
+  }
+
+  closeModal();
+  if (hasVal) toast('✓ Đã lưu đánh giá');
+}
+
 async function markRowDone(pjId, gId, rId) {
   const pj = allCurProjects().find(p=>p.id===pjId);
   if (!pj) return;
@@ -4424,8 +4516,10 @@ async function markRowDone(pjId, gId, rId) {
   const tbody = document.getElementById('rbody-' + pjId);
   if (tbody) tbody.innerHTML = renderGroups(pj);
   refreshPjTotals(pjId);
+  try { refreshStaffSched(pjId); } catch(e) {}
+  try { renderSidebar(); } catch(e) {}
 
-  toast(`✓ Đã UP — ${label} lúc ${timeStr} | Điểm: ${score}/10`, 4000);
+  openUpRatingModal(pjId, gId, rId, label, timeStr);
 }
 
 function updRowRating(pjId, gId, rId, field, val) {
@@ -4574,15 +4668,18 @@ function renderGroups(p) {
         </td>
         <td style="text-align:center;${cellDim}">
           ${r.doneAt
-            ? `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">
-                <span style="font-size:9px;font-weight:700;color:#27ae60">✓ Đã UP</span>
-                <span style="font-size:8px;color:#888">${r.doneAt.slice(0,10)}</span>
+            ? `<div style="text-align:center">
+                <span style="font-size:9px;font-weight:700;color:#27ae60">✓ Đã UP ${r.doneAt.slice(0,10)}</span>
               </div>`
             : `<input type="date" class="tbl-input" value="${r.dateTo||''}"
                 style="font-size:10px;padding:3px 5px;min-width:0;${deadlinePast?'border-color:#e74c3c;background:#fff5f5':deadlineSoon?'border-color:var(--orange);background:#fffbf0':''}"
                 onchange="updRow('${p.id}','${g.id}','${r.id}','dateTo',this.value);refreshStaffSched('${p.id}')">
-              ${deadlinePast?'<div style="font-size:9px;color:#e74c3c;font-weight:600">Quá hạn!</div>':''}
-              ${deadlineSoon?'<div style="font-size:9px;color:var(--orange);font-weight:600">⚡Sắp UP</div>':''}`
+              ${r.dateTo ? (r.dateTo < today
+                ? '<div style="font-size:9px;color:#e67e22;font-weight:700">⚠️ Quá hạn</div>'
+                : r.dateTo === today
+                  ? '<div style="font-size:9px;color:#e74c3c;font-weight:700">⚡ UP hôm nay</div>'
+                  : '<div style="font-size:9px;color:#2980b9;font-weight:700">⏳ Đang làm</div>'
+              ) : ''}`
           }
         </td>
         <td style="text-align:center;min-width:56px;${cellDim}">
@@ -7303,12 +7400,13 @@ function checkMorningNotification() {
     [].concat(m.projects||[], m.projectsVN||[]).forEach(function(p) {
       var pName = p.nameVN || p.nameJP || p.id;
       (p.groups||[]).forEach(function(g) {
+        var gName = g.type || '';
         (g.rows||[]).forEach(function(r) {
           if (r.upTime && r.upTime.slice(0,10) === today && !r.doneAt)
-            ups.push({pj: pName, staff: r.staff||''});
+            ups.push({pj: pName, grp: gName, staff: r.staff||''});
           if (r.dateTo && !r.doneAt && r.dateTo >= today && r.dateTo <= day3Str) {
             var daysLeft = Math.round((new Date(r.dateTo)-now)/(1000*60*60*24));
-            deadlines.push({pj: pName, staff: r.staff||'', date: r.dateTo, days: daysLeft});
+            deadlines.push({pj: pName, grp: gName, staff: r.staff||'', date: r.dateTo, days: daysLeft});
           }
         });
       });
@@ -7340,7 +7438,7 @@ function checkMorningNotification() {
   if (ups.length) {
     html += '<div style="' + secStyle + '">'
       + '<div style="' + hdrStyle('#c0392b') + '"><span>⏰</span> UP hôm nay <span style="background:#c0392b;color:#fff;border-radius:99px;font-size:10px;padding:0 7px">' + ups.length + '</span></div>'
-      + ups.map(function(u){ return '<div style="' + rowStyle + '"><span style="' + dotStyle('#ef4444') + '"></span><span><b>' + u.pj + '</b>' + (u.staff?' · '+u.staff:'') + '</span></div>'; }).join('')
+      + ups.map(function(u){ return '<div style="' + rowStyle + '"><span style="' + dotStyle('#ef4444') + '"></span><span><b>' + u.pj + '</b>' + (u.grp?' · <span style="color:#555">'+u.grp+'</span>':'') + (u.staff?' · '+u.staff:'') + '</span></div>'; }).join('')
       + '</div>';
   }
 
@@ -7351,7 +7449,7 @@ function checkMorningNotification() {
       + deadlines.map(function(d){
           var urgColor = d.days===0?'#ef4444':d.days===1?'#f97316':'#f59e0b';
           var urgText = d.days===0?'Hôm nay!':d.days===1?'Ngày mai':'Còn '+d.days+' ngày';
-          return '<div style="' + rowStyle + '"><span style="' + dotStyle(urgColor) + '"></span><span style="flex:1"><b>' + d.pj + '</b>' + (d.staff?' · '+d.staff:'') + '</span><span style="font-size:10px;background:'+urgColor+';color:#fff;border-radius:99px;padding:1px 7px;white-space:nowrap">'+urgText+'</span></div>';
+          return '<div style="' + rowStyle + '"><span style="' + dotStyle(urgColor) + '"></span><span style="flex:1"><b>' + d.pj + '</b>' + (d.grp?' · <span style="color:#555">'+d.grp+'</span>':'') + (d.staff?' · '+d.staff:'') + '</span><span style="font-size:10px;background:'+urgColor+';color:#fff;border-radius:99px;padding:1px 7px;white-space:nowrap">'+urgText+'</span></div>';
         }).join('')
       + '</div>';
   }
