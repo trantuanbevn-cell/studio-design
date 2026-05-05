@@ -3709,8 +3709,8 @@ function renderProjectDetail(ci, p) {
         <th style="width:7%;text-align:center">OT(h)</th>
         <th style="width:9%;text-align:center">OT lý do</th>
         ${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? '' : `
-          <th colspan="3" style="text-align:center;font-size:9px;padding:3px 4px;background:#f0f4ff;color:#1a5276;cursor:pointer;white-space:nowrap" onclick="toggleRatingExpand(this,'${activePjId}')">
-            📐 Kỹ thuật &nbsp;|&nbsp; ⚡ Năng lực &nbsp;|&nbsp; 💼 Thái độ &nbsp;<span style="font-size:8px;color:#888">(click mở rộng)</span>
+          <th colspan="6" style="text-align:center;font-size:9px;padding:3px 4px;background:#f0f4ff;color:#1a5276;cursor:pointer;white-space:nowrap" onclick="toggleRatingExpand(this,'${activePjId}')">
+            📐 Chuyên môn &nbsp;|&nbsp; 📅 Tiến độ &nbsp;|&nbsp; 🤝 Phối hợp &nbsp;|&nbsp; 💼 Thái độ &nbsp;|&nbsp; 📈 Phát triển &nbsp;|&nbsp; 🌐 Ngoại ngữ &nbsp;<span style="font-size:8px;color:#888">(click mở rộng)</span>
           </th>
         `}
         <th style="width:26px"></th>
@@ -3718,7 +3718,7 @@ function renderProjectDetail(ci, p) {
       <tbody id="rbody-${p.id}">${renderGroups(p)}</tbody>
       <tfoot id="rfoot-${p.id}">
         <tr style="background:var(--rev-bg);border-top:2px solid var(--navy)">
-          <td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : 12}" style="padding:8px 12px">
+          <td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : 15}" style="padding:8px 12px">
             <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <span style="font-size:11px;font-weight:700;color:var(--gray4);text-transform:uppercase;letter-spacing:.06em">Tổng dự án:</span>
               <div style="display:flex;align-items:center;gap:6px">
@@ -3855,62 +3855,68 @@ function delPhoto(pjId,slot) {
 
 
 
-/* ── Rating field definitions per section ── */
-// ── KPI Rating fields — JP: Architectural Visualization (14 criteria)
-// Group A: Chất lượng kỹ thuật (weight 40%) — rate0..rate5
-// Group B: Năng lực chuyên môn (weight 30%) — rate6..rate9
-// Group C: Thái độ & Cống hiến (weight 30%) — rate10..rate13
+/* ── Rating field definitions — 6 nhóm 16 tiêu chí, dùng chung cấu trúc JP/VN ── */
+// A: Chuyên môn (35%) — rate0-rate5
+// B: Tiến độ    (25%) — rate6-rate8
+// C: Phối hợp   (15%) — rate9-rate10
+// D: Thái độ    (10%) — rate11-rate12
+// E: Phát triển (10%) — rate13-rate14
+// F: Ngoại ngữ   (5%) — rate15
 const RATING_JP = [
-  // Group A: Kỹ thuật diễn họa
-  {field:'rate0',  label:'Dựng hình 3D',    color:'#E74C3C', group:'A', weight:40},
-  {field:'rate1',  label:'Ánh sáng',         color:'#E67E22', group:'A', weight:40},
-  {field:'rate2',  label:'Vật liệu/Texture', color:'#F39C12', group:'A', weight:40},
-  {field:'rate3',  label:'Cảnh quan',        color:'#F1C40F', group:'A', weight:40},
-  {field:'rate4',  label:'Bố cục/Camera',    color:'#70AD47', group:'A', weight:40},
-  {field:'rate5',  label:'Chất lượng Render',color:'#1ABC9C', group:'A', weight:40},
-  // Group B: Năng lực
-  {field:'rate6',  label:'Tốc độ',           color:'#4fc3f7', group:'B', weight:30},
-  {field:'rate7',  label:'Tỷ lệ lỗi',        color:'#E74C3C', group:'B', weight:30},
-  {field:'rate8',  label:'Đúng hạn',         color:'#27AE60', group:'B', weight:30},
-  {field:'rate9',  label:'Xử lý feedback',   color:'#8E44AD', group:'B', weight:30},
-  // Group C: Thái độ
-  {field:'rate10', label:'Tập trung',         color:'#81c784', group:'C', weight:30},
-  {field:'rate11', label:'Trách nhiệm',       color:'#9B59B6', group:'C', weight:30},
-  {field:'rate12', label:'OT/Cống hiến',      color:'#E67E22', group:'C', weight:30},
-  {field:'rate13', label:'Hỗ trợ nhóm',       color:'#16A085', group:'C', weight:30},
+  // A: Chuyên môn (35%)
+  {field:'rate0',  label:'Chất lượng render',              color:'#E74C3C', group:'A', weight:35},
+  {field:'rate1',  label:'Độ chính xác theo brief JP',     color:'#E67E22', group:'A', weight:35},
+  {field:'rate2',  label:'Kỹ thuật xử lý 3D model',       color:'#F39C12', group:'A', weight:35},
+  {field:'rate3',  label:'Phong cách thẩm mỹ JP',         color:'#F1C40F', group:'A', weight:35},
+  {field:'rate4',  label:'Xử lý ánh sáng & vật liệu',     color:'#70AD47', group:'A', weight:35},
+  {field:'rate5',  label:'Sáng tạo góc nhìn & bố cục',    color:'#1ABC9C', group:'A', weight:35},
+  // B: Tiến độ (25%)
+  {field:'rate6',  label:'Tỷ lệ UP đúng hạn',             color:'#4fc3f7', group:'B', weight:25},
+  {field:'rate7',  label:'Số lần phải sửa',                color:'#E74C3C', group:'B', weight:25},
+  {field:'rate8',  label:'Năng suất',                      color:'#27AE60', group:'B', weight:25},
+  // C: Phối hợp (15%)
+  {field:'rate9',  label:'Giao tiếp JP side',              color:'#8E44AD', group:'C', weight:15},
+  {field:'rate10', label:'Hỗ trợ đồng nghiệp',            color:'#4472C4', group:'C', weight:15},
+  // D: Thái độ (10%)
+  {field:'rate11', label:'Đúng giờ, chuyên cần',           color:'#81c784', group:'D', weight:10},
+  {field:'rate12', label:'Chủ động xử lý vấn đề',         color:'#9B59B6', group:'D', weight:10},
+  // E: Phát triển (10%)
+  {field:'rate13', label:'Cải thiện qua feedback',         color:'#E67E22', group:'E', weight:10},
+  {field:'rate14', label:'Học kỹ thuật mới',               color:'#16A085', group:'E', weight:10},
+  // F: Ngoại ngữ (5%)
+  {field:'rate15', label:'Tiếng Nhật/Anh chuyên ngành',   color:'#2980B9', group:'F', weight:5},
 ];
 
-// ── KPI Rating fields — VN: Architecture & Interior Design (14 criteria)
-// Group A: Quy trình thiết kế (weight 45%) — rate0..rate6
-// Group B: Chất lượng kỹ thuật (weight 30%) — rate7..rate10
-// Group C: Thái độ & Cống hiến (weight 25%) — rate11..rate13
 const RATING_VN = [
-  // Group A: Giai đoạn thiết kế (weight 45%) — rate0..rate6, nhập tay
-  {field:'rate0',  label:'Định hướng Concept', color:'#E74C3C', group:'A', weight:45},
-  {field:'rate1',  label:'Layout KT-NT',        color:'#E67E22', group:'A', weight:45},
-  {field:'rate2',  label:'Concept KT',          color:'#F1C40F', group:'A', weight:45},
-  {field:'rate3',  label:'Concept NT',          color:'#70AD47', group:'A', weight:45},
-  {field:'rate4',  label:'TKCS',                color:'#1ABC9C', group:'A', weight:45},
-  {field:'rate5',  label:'TKTC',                color:'#4fc3f7', group:'A', weight:45},
-  {field:'rate6',  label:'Spec vật liệu',       color:'#8E44AD', group:'A', weight:45},
-  // Group B: Kỹ thuật (weight 30%) — rate7..rate10, nhập tay
-  // rate10 (Tỷ lệ lỗi/Revision) liên kết với UP: UP muộn → tăng tỷ lệ lỗi → điểm thấp hơn
-  {field:'rate7',  label:'Độ chính xác',        color:'#E74C3C', group:'B', weight:30},
-  {field:'rate8',  label:'Phối hợp CK',         color:'#E67E22', group:'B', weight:30},
-  {field:'rate9',  label:'Trình bày hồ sơ',     color:'#27AE60', group:'B', weight:30},
-  {field:'rate10', label:'Tỷ lệ lỗi/Revision',  color:'#C0392B', group:'B', weight:30},
-  // Group C: Thái độ (weight 25%) — rate11..rate13, nhập tay
-  // rate11 (Tiến độ/Milestone) liên kết với UP: mốc thời gian UP ảnh hưởng trực tiếp tiêu chí này
-  {field:'rate11', label:'Tiến độ/Milestone',   color:'#81c784', group:'C', weight:25},
-  {field:'rate12', label:'Sáng kiến',            color:'#9B59B6', group:'C', weight:25},
-  {field:'rate13', label:'OT/Cam kết',           color:'#E67E22', group:'C', weight:25},
+  // A: Chuyên môn (35%)
+  {field:'rate0',  label:'Chất lượng Concept & ý tưởng',  color:'#E74C3C', group:'A', weight:35},
+  {field:'rate1',  label:'Hồ sơ kỹ thuật BVTC',           color:'#E67E22', group:'A', weight:35},
+  {field:'rate2',  label:'Phối hợp MEP',                   color:'#F39C12', group:'A', weight:35},
+  {field:'rate3',  label:'Kiến thức vật liệu & giá',      color:'#F1C40F', group:'A', weight:35},
+  {field:'rate4',  label:'Chất lượng phối cảnh minh họa', color:'#70AD47', group:'A', weight:35},
+  {field:'rate5',  label:'Tư duy không gian & công năng', color:'#1ABC9C', group:'A', weight:35},
+  // B: Tiến độ (25%)
+  {field:'rate6',  label:'Đúng milestone dự án',           color:'#4fc3f7', group:'B', weight:25},
+  {field:'rate7',  label:'Chất lượng hồ sơ lần nộp đầu', color:'#E74C3C', group:'B', weight:25},
+  {field:'rate8',  label:'Xử lý phát sinh thi công',      color:'#27AE60', group:'B', weight:25},
+  // C: Phối hợp (15%)
+  {field:'rate9',  label:'Giao tiếp & thuyết trình CĐT',  color:'#8E44AD', group:'C', weight:15},
+  {field:'rate10', label:'Phối hợp nhà thầu thi công',    color:'#4472C4', group:'C', weight:15},
+  // D: Thái độ (10%)
+  {field:'rate11', label:'Đúng giờ, chuyên cần',           color:'#81c784', group:'D', weight:10},
+  {field:'rate12', label:'Chủ động xử lý vấn đề',         color:'#9B59B6', group:'D', weight:10},
+  // E: Phát triển (10%)
+  {field:'rate13', label:'Cải thiện qua feedback',         color:'#E67E22', group:'E', weight:10},
+  {field:'rate14', label:'Cập nhật xu hướng thiết kế',    color:'#16A085', group:'E', weight:10},
+  // F: Ngoại ngữ (5%)
+  {field:'rate15', label:'Tiếng Nhật/Anh chuyên ngành',   color:'#2980B9', group:'F', weight:5},
 ];
 function getRatingFields() {
   return activeSection === 'vn' ? RATING_VN : RATING_JP;
 }
 function getAllRatingFields() {
-  const all = new Set([...RATING_JP, ...RATING_VN].map(r=>r.field));
-  return [...all];
+  return ['rate0','rate1','rate2','rate3','rate4','rate5','rate6','rate7',
+          'rate8','rate9','rate10','rate11','rate12','rate13','rate14','rate15'];
 }
 
 // ══════════════════════════════════════════════════════
@@ -3932,63 +3938,36 @@ function calcKPI(rows, section, totalOTHours, totalQty, onTimeRate) {
     });
   });
 
-  if (section === 'jp') {
-    // Group A: Kỹ thuật diễn họa (rate0-rate5) — weight 40%
-    const grpA = ['rate0','rate1','rate2','rate3','rate4','rate5'];
-    const grpB = ['rate6','rate7','rate8','rate9'];   // weight 30%
-    const grpC = ['rate10','rate11','rate12','rate13']; // weight 30%
-    
-    const avgGroup = (fields_) => {
-      const vals = fields_.map(f => fieldCounts[f] > 0 ? fieldSums[f]/fieldCounts[f] : null).filter(v=>v!==null);
-      return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
-    };
-    
-    const A = avgGroup(grpA), B = avgGroup(grpB), C = avgGroup(grpC);
-    const hasData = A > 0 || B > 0 || C > 0;
-    if (!hasData) return null;
-    
-    let kpi = (A * 0.40) + (B * 0.30) + (C * 0.30);
-    
-    // OT bonus: tiered by hours
-    if (totalOTHours > 30) kpi *= 1.20;
-    else if (totalOTHours > 20) kpi *= 1.10;
-    else if (totalOTHours > 10) kpi *= 1.05;
-    // Error penalty: rate7 (Tỷ lệ lỗi) low → penalty
-    const errorScore = fieldCounts['rate7'] > 0 ? fieldSums['rate7']/fieldCounts['rate7'] : 10;
-    if (errorScore < 3) kpi *= 0.85; // high error rate
-    
-    return Math.min(10, kpi);
-    
-  } else {
-    // VN — Group A: Giai đoạn thiết kế rate0..rate6 (weight 45%)
-    const grpA = ['rate0','rate1','rate2','rate3','rate4','rate5','rate6'];
-    // VN — Group B: Kỹ thuật rate7..rate10 (weight 30%)
-    const grpB = ['rate7','rate8','rate9','rate10'];
-    // VN — Group C: Thái độ rate11..rate13 (weight 25%)
-    const grpC = ['rate11','rate12','rate13'];
+  // Unified 6-group formula: A×35% + B×25% + C×15% + D×10% + E×10% + F×5%
+  const grpA = ['rate0','rate1','rate2','rate3','rate4','rate5'];
+  const grpB = ['rate6','rate7','rate8'];
+  const grpC = ['rate9','rate10'];
+  const grpD = ['rate11','rate12'];
+  const grpE = ['rate13','rate14'];
+  const grpF = ['rate15'];
 
-    const avgGroup = (fields_) => {
-      const vals = fields_.map(f => fieldCounts[f] > 0 ? fieldSums[f]/fieldCounts[f] : null).filter(v=>v!==null);
-      return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
-    };
+  const avgGroup = (fields_) => {
+    const vals = fields_.map(f => fieldCounts[f] > 0 ? fieldSums[f]/fieldCounts[f] : null).filter(v=>v!==null);
+    return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+  };
 
-    const A = avgGroup(grpA), B = avgGroup(grpB), C = avgGroup(grpC);
-    const hasData = A > 0 || B > 0 || C > 0;
-    if (!hasData) return null;
+  const A = avgGroup(grpA), B = avgGroup(grpB), C = avgGroup(grpC);
+  const D = avgGroup(grpD), E = avgGroup(grpE), F = avgGroup(grpF);
+  const hasData = A > 0 || B > 0 || C > 0 || D > 0 || E > 0 || F > 0;
+  if (!hasData) return null;
 
-    let kpi = (A * 0.45) + (B * 0.30) + (C * 0.25);
+  // Weighted sum — skip groups with no data to avoid pulling score down
+  let weightedSum = 0, totalWeight = 0;
+  const groups = [[A,0.35],[B,0.25],[C,0.15],[D,0.10],[E,0.10],[F,0.05]];
+  groups.forEach(([val, w]) => { if (val > 0) { weightedSum += val * w; totalWeight += w; } });
+  let kpi = totalWeight > 0 ? weightedSum / totalWeight * 10 : 0;
 
-    // OT bonus
-    if (totalOTHours > 30) kpi *= 1.20;
-    else if (totalOTHours > 20) kpi *= 1.10;
-    else if (totalOTHours > 10) kpi *= 1.05;
-    // Penalty: rate10 (Tỷ lệ lỗi/Revision) thấp → nhiều revision
-    // rate10 giờ liên kết với UP muộn nên phản ánh thực tế tốt hơn
-    const revScore = fieldCounts['rate10'] > 0 ? fieldSums['rate10']/fieldCounts['rate10'] : 10;
-    if (revScore < 3) kpi *= 0.90;
+  // OT bonus: tiered by hours
+  if (totalOTHours > 30) kpi *= 1.20;
+  else if (totalOTHours > 20) kpi *= 1.10;
+  else if (totalOTHours > 10) kpi *= 1.05;
 
-    return Math.min(10, kpi);
-  }
+  return Math.min(10, kpi);
 }
 
 // Rolling KPI: weighted average of 3M recent (50%) + 12M avg (35%) + best month (15%)
@@ -4049,6 +4028,9 @@ function renderRatingGroups(pjId, gId, row, dimStyle) {
   const grpA = fields.filter(rf=>rf.group==='A');
   const grpB = fields.filter(rf=>rf.group==='B');
   const grpC = fields.filter(rf=>rf.group==='C');
+  const grpD = fields.filter(rf=>rf.group==='D');
+  const grpE = fields.filter(rf=>rf.group==='E');
+  const grpF = fields.filter(rf=>rf.group==='F');
 
   function grpAvg(grpFields) {
     const vals = grpFields.map(rf=>row[rf.field]||0).filter(v=>v>0);
@@ -4059,7 +4041,7 @@ function renderRatingGroups(pjId, gId, row, dimStyle) {
     const avg = grpAvg(grpFields);
     const dc = avg > 0 ? ratingColor(avg) : '#ccc';
     const pct = avg * 10;
-    return `<td style="padding:2px 4px;min-width:70px;vertical-align:middle;${dimStyle||''}">
+    return `<td style="padding:2px 4px;min-width:60px;vertical-align:middle;${dimStyle||''}">
       <div style="display:flex;flex-direction:column;gap:2px">
         <div style="display:flex;align-items:center;gap:3px;cursor:pointer"
              onclick="openRatingModal('${x(pjId)}','${x(gId)}','${x(row.id)}','${groupId}','${label}','${emoji}')"
@@ -4075,9 +4057,12 @@ function renderRatingGroups(pjId, gId, row, dimStyle) {
     </td>`;
   }
 
-  return grpCell(grpA, 'Kỹ thuật', '📐', 'A')
-       + grpCell(grpB, 'Năng lực', '⚡', 'B')
-       + grpCell(grpC, 'Thái độ',  '💼', 'C');
+  return grpCell(grpA, 'Chuyên môn', '📐', 'A')
+       + grpCell(grpB, 'Tiến độ',    '📅', 'B')
+       + grpCell(grpC, 'Phối hợp',   '🤝', 'C')
+       + grpCell(grpD, 'Thái độ',    '💼', 'D')
+       + grpCell(grpE, 'Phát triển', '📈', 'E')
+       + grpCell(grpF, 'Ngoại ngữ',  '🌐', 'F');
 }
 
 function openRatingModal(pjId, gId, rowId, groupId, label, emoji) {
@@ -4403,6 +4388,9 @@ function openUpRatingModal(pjId, gId, rowId, upLabel, timeStr) {
   var grpA = fields.filter(function(rf){ return rf.group==='A'; });
   var grpB = fields.filter(function(rf){ return rf.group==='B'; });
   var grpC = fields.filter(function(rf){ return rf.group==='C'; });
+  var grpD = fields.filter(function(rf){ return rf.group==='D'; });
+  var grpE = fields.filter(function(rf){ return rf.group==='E'; });
+  var grpF = fields.filter(function(rf){ return rf.group==='F'; });
 
   function grpAvg(grpFields) {
     var vals = grpFields.map(function(rf){ return row[rf.field]||0; }).filter(function(v){ return v>0; });
@@ -4431,9 +4419,12 @@ function openUpRatingModal(pjId, gId, rowId, upLabel, timeStr) {
     + '<span style="margin-left:auto;background:'+scoreColor+';border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700">'+upLabel+'</span></div>'
     + '<div style="padding:0 2px;margin-bottom:12px">'
     + '<div style="font-size:11px;color:#888;margin-bottom:10px;font-weight:600">📊 Đánh giá chất lượng (tuỳ chọn)</div>'
-    + sliderRow('A', grpA, '📐', 'Kỹ thuật', '#4472C4')
-    + sliderRow('B', grpB, '⚡', 'Năng lực', '#27ae60')
-    + sliderRow('C', grpC, '💼', 'Thái độ', '#9B59B6')
+    + sliderRow('A', grpA, '📐', 'Chuyên môn', '#4472C4')
+    + sliderRow('B', grpB, '📅', 'Tiến độ',   '#27ae60')
+    + sliderRow('C', grpC, '🤝', 'Phối hợp',  '#e67e22')
+    + sliderRow('D', grpD, '💼', 'Thái độ',   '#9B59B6')
+    + sliderRow('E', grpE, '📈', 'Phát triển','#16a085')
+    + sliderRow('F', grpF, '🌐', 'Ngoại ngữ', '#2980b9')
     + '</div>'
     + '<div class="modal-ft">'
     + '<button class="btn" onclick="closeModal()">Bỏ qua</button>'
@@ -4453,7 +4444,7 @@ function saveUpRating(pjId, gId, rowId) {
   var fields = typeof getRatingFields === 'function' ? getRatingFields() : [];
   var hasVal = false;
 
-  ['A','B','C'].forEach(function(groupId) {
+  ['A','B','C','D','E','F'].forEach(function(groupId) {
     var el = document.getElementById('uprating-'+groupId);
     var slVal = el ? (+el.value) : 0;
     if (slVal > 0) {
@@ -5608,7 +5599,7 @@ function renderDashboard() {
   function initAnn(obj) {
     D.settings.staffList.forEach(s=>{
       obj[s]={n:0,r:0,ot:0,rCount:0};
-      for(let i=0;i<14;i++) obj[s]['rate'+i+'Sum']=0;
+      for(let i=0;i<16;i++) obj[s]['rate'+i+'Sum']=0;
     });
   }
   initAnn(staffAnn); initAnn(staffAnnJP); initAnn(staffAnnVN);
@@ -5619,7 +5610,7 @@ function renderDashboard() {
         if(r.status==='new') obj[r.staff].n+=(r.qty||0); else obj[r.staff].r+=(r.qty||0);
         obj[r.staff].ot+=(r.ot||0);
         let hasRating=false;
-        for(let i=0;i<14;i++){if(r['rate'+i]){hasRating=true;obj[r.staff]['rate'+i+'Sum']+=(r['rate'+i]||0);}}
+        for(let i=0;i<16;i++){if(r['rate'+i]){hasRating=true;obj[r.staff]['rate'+i+'Sum']+=(r['rate'+i]||0);}}
         if(hasRating) obj[r.staff].rCount++;
       }
     });
@@ -5659,31 +5650,47 @@ function renderDashboard() {
     const grpAfields = ratingFields.filter(rf=>rf.group==='A');
     const grpBfields = ratingFields.filter(rf=>rf.group==='B');
     const grpCfields = ratingFields.filter(rf=>rf.group==='C');
-    const grpAw = section==='vn' ? 45 : 40;
-    const grpBw = 30, grpCw = section==='vn' ? 25 : 30;
+    const grpDfields = ratingFields.filter(rf=>rf.group==='D');
+    const grpEfields = ratingFields.filter(rf=>rf.group==='E');
+    const grpFfields = ratingFields.filter(rf=>rf.group==='F');
 
     const groupHeaderRow = `<tr>
       <th colspan="7" style="background:var(--navy);color:#fff"></th>
       <th style="text-align:center;font-size:9px;background:#e8f4fd;color:#1a5276;border-left:2px solid #aed6f1">
-        📐 ${section==='vn'?'Quy trình':'Kỹ thuật'} (${grpAw}%)
+        📐 Chuyên môn (35%)
       </th>
       <th style="text-align:center;font-size:9px;background:#eafaf1;color:#1e8449;border-left:1px solid #a9dfbf">
-        ⚡ Năng lực (${grpBw}%)
+        📅 Tiến độ (25%)
       </th>
       <th style="text-align:center;font-size:9px;background:#fef9e7;color:#7d6608;border-left:1px solid #f9e79f">
-        💼 Thái độ (${grpCw}%)
+        🤝 Phối hợp (15%)
+      </th>
+      <th style="text-align:center;font-size:9px;background:#fdf2f8;color:#7d3c98;border-left:1px solid #e8daef">
+        💼 Thái độ (10%)
+      </th>
+      <th style="text-align:center;font-size:9px;background:#eafaf1;color:#196f3d;border-left:1px solid #a9dfbf">
+        📈 Phát triển (10%)
+      </th>
+      <th style="text-align:center;font-size:9px;background:#ebf5fb;color:#1a5276;border-left:1px solid #aed6f1">
+        🌐 Ngoại ngữ (5%)
       </th>
       <th colspan="2" style="background:var(--navy);color:#fff"></th>
     </tr>`;
 
-    // Dashboard: show 3 group header columns only
+    // Dashboard: show 6 group header columns
     const ratingHeaders = `
-      <th style="text-align:center;font-size:9px;min-width:55px;background:#e8f4fd;color:#1a5276;border-left:2px solid #aed6f1">
-        📐 ${section==='vn'?'Quy trình':'Kỹ thuật'}</th>
-      <th style="text-align:center;font-size:9px;min-width:55px;background:#eafaf1;color:#1e8449;border-left:1px solid #a9dfbf">
-        ⚡ Năng lực</th>
-      <th style="text-align:center;font-size:9px;min-width:55px;background:#fef9e7;color:#7d6608;border-left:1px solid #f9e79f">
-        💼 Thái độ</th>`;
+      <th style="text-align:center;font-size:9px;min-width:50px;background:#e8f4fd;color:#1a5276;border-left:2px solid #aed6f1">
+        📐 Chuyên môn</th>
+      <th style="text-align:center;font-size:9px;min-width:50px;background:#eafaf1;color:#1e8449;border-left:1px solid #a9dfbf">
+        📅 Tiến độ</th>
+      <th style="text-align:center;font-size:9px;min-width:50px;background:#fef9e7;color:#7d6608;border-left:1px solid #f9e79f">
+        🤝 Phối hợp</th>
+      <th style="text-align:center;font-size:9px;min-width:50px;background:#fdf2f8;color:#7d3c98;border-left:1px solid #e8daef">
+        💼 Thái độ</th>
+      <th style="text-align:center;font-size:9px;min-width:50px;background:#eafaf1;color:#196f3d;border-left:1px solid #a9dfbf">
+        📈 Phát triển</th>
+      <th style="text-align:center;font-size:9px;min-width:50px;background:#ebf5fb;color:#1a5276;border-left:1px solid #aed6f1">
+        🌐 Ngoại ngữ</th>`;
 
     const rows = staffList.map(s=>{
       const t=annData[s].n+annData[s].r, pct=Math.round(t/mx*100);
@@ -5706,7 +5713,8 @@ function renderDashboard() {
             </td>`
           : `<td style="text-align:center;color:var(--gray3);border-left:1px solid #eee">—</td>`;
       }
-      const ratingCells = dashGrpCell(grpAfields)+dashGrpCell(grpBfields)+dashGrpCell(grpCfields);
+      const ratingCells = dashGrpCell(grpAfields)+dashGrpCell(grpBfields)+dashGrpCell(grpCfields)
+                        +dashGrpCell(grpDfields)+dashGrpCell(grpEfields)+dashGrpCell(grpFfields);
 
       // KPI calculation — use monthly KPI history
       const monthlyData = getStaffMonthlyKPIs(s, section);
@@ -6107,18 +6115,35 @@ function calcStaffScore(name, mid) {
   const pjs = [...(m.projects||[]), ...(m.projectsVN||[])];
   const today = localDateStr(new Date());
 
-  // Rating trung bình (kỹ thuật + năng lực + thái độ)
-  const fields = getRatingFields ? getRatingFields() : [];
-  let ratingSum = 0, ratingCount = 0;
+  // Rating trọng số 6 nhóm: A×35% + B×25% + C×15% + D×10% + E×10% + F×5%
+  const _grpDef = [
+    {fields:['rate0','rate1','rate2','rate3','rate4','rate5'], w:0.35},
+    {fields:['rate6','rate7','rate8'],                        w:0.25},
+    {fields:['rate9','rate10'],                               w:0.15},
+    {fields:['rate11','rate12'],                              w:0.10},
+    {fields:['rate13','rate14'],                              w:0.10},
+    {fields:['rate15'],                                       w:0.05},
+  ];
+  // Collect per-group sums across all rows for this staff
+  const _grpSums = _grpDef.map(()=>({sum:0,cnt:0}));
   pjs.forEach(p=>{
     (p.groups||[]).forEach(g=>{
       (g.rows||[]).filter(r=>r.staff===name).forEach(r=>{
-        const vals = fields.map(f=>r[f.field]||0).filter(v=>v>0);
-        if (vals.length) { ratingSum += vals.reduce((a,b)=>a+b,0)/vals.length; ratingCount++; }
+        _grpDef.forEach((gd, gi)=>{
+          const vals = gd.fields.map(f=>r[f]||0).filter(v=>v>0);
+          if (vals.length) { _grpSums[gi].sum += vals.reduce((a,b)=>a+b,0)/vals.length; _grpSums[gi].cnt++; }
+        });
       });
     });
   });
-  const avgRating = ratingCount>0 ? ratingSum/ratingCount : 0;
+  let weightedSum = 0, totalWeight = 0;
+  _grpDef.forEach((gd, gi)=>{
+    if (_grpSums[gi].cnt > 0) {
+      weightedSum += (_grpSums[gi].sum/_grpSums[gi].cnt) * gd.w;
+      totalWeight += gd.w;
+    }
+  });
+  const avgRating = totalWeight > 0 ? weightedSum / totalWeight : 0;
 
   // Tỷ lệ đúng hạn
   let totalUp=0, onTimeUp=0;
