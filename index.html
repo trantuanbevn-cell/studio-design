@@ -827,6 +827,9 @@ async function sbLoadAll() {
       id: p.id, nameVN: p.name_vn, nameJP: p.name_jp,
       office: p.office, contact: p.contact, mainStaff: p.main_staff,
       notes: p.notes, _carryover: p.is_carryover,
+      client: p.client||'', buildingType: p.building_type||'',
+      scope: p.scope||'', area: p.area||'',
+      constructionStart: p.construction_start||'', constructionEnd: p.construction_end||'',
       groups, photos: (function(){ var s=photosByPj[p.id]||{}; var a=[]; Object.keys(s).forEach(function(k){ a[+k]=s[k]; }); return a; })(), otLog: [],
       tlTasks: (tlByProject[p.id] || []).map(t => ({
         id: t.id, lv: t.lv, name: t.name, start: t.start_date,
@@ -870,7 +873,7 @@ async function sbPushAll() {
   var _pRecs = []; var _si = 0;
   Object.entries(D.months||{}).forEach(function(kv){ var mid=kv[0],m=kv[1];
     [['jp',m.projects||[]],['vn',m.projectsVN||[]]].forEach(function(sv){ var sec=sv[0],pjs=sv[1];
-      pjs.forEach(function(p){ _pRecs.push({ id:p.id, month_id:mid, section:sec, name_vn:p.nameVN||'', name_jp:p.nameJP||'', office:p.office||'', contact:p.contact||'', main_staff:p.mainStaff||'', notes:p.notes||'', is_carryover:!!p._carryover, sort_order:_si++ }); });
+      pjs.forEach(function(p){ _pRecs.push({ id:p.id, month_id:mid, section:sec, name_vn:p.nameVN||'', name_jp:p.nameJP||'', office:p.office||'', contact:p.contact||'', main_staff:p.mainStaff||'', notes:p.notes||'', is_carryover:!!p._carryover, client:p.client||'', building_type:p.buildingType||'', scope:p.scope||'', area:p.area||'', construction_start:p.constructionStart||null, construction_end:p.constructionEnd||null, sort_order:_si++ }); });
     });
   });
   if (_pRecs.length) try { await _sb.from('projects').upsert(_pRecs, {onConflict:'id'}); } catch(e) { _errs.push('projects: '+e.message); }
