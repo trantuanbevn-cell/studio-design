@@ -812,11 +812,13 @@ async function sbLoadAll() {
     if (!result.months[p.month_id]) continue;
     const _pTlList = tlByProject[p.id] || [];
     const _pTlIdxMap = new Map(_pTlList.map(function(t,i){ return [t.id, i]; }));
-    const groups = (groupsByProject[p.id] || []).map(g => {
-      // Tìm TL task tương ứng để mark _fromTlTask trên các rows (phục vụ sync remove staff)
-      const tlTaskRaw = g.tl_task_id
-        ? _pTlList.find(t => t.id === g.tl_task_id)
-        : null;
+    const _pTlIdSet  = new Set(_pTlList.map(function(t){ return t.id; }));
+    const _pTlNameSet = new Set(_pTlList.map(function(t){ return t.name; }));
+    const _hasPjTl = _pTlList.length > 0;
+
+    const _orphanedGroupIds = []; // để xóa khỏi Supabase
+    const allMappedGroups = (groupsByProject[p.id] || []).map(g => {
+      const tlTaskRaw = g.tl_task_id ? _pTlList.find(t => t.id === g.tl_task_id) : null;
       const tlStaffSet = new Set(Array.isArray(tlTaskRaw?.staff) ? tlTaskRaw.staff : []);
       return {
         id: g.id, type: g.type, tlTaskId: g.tl_task_id,
@@ -833,7 +835,29 @@ async function sbLoadAll() {
         }))
       };
     });
-    // Sort groups theo thứ tự tl_tasks từ Supabase (đã load theo sort_order)
+
+    // Lọc orphaned groups: có tl_task_id không còn tồn tại, hoặc không có tl_task_id
+    // mà type không khớp TL task nào (chỉ áp dụng cho project có TL tasks)
+    const groups = allMappedGroups.filter(function(g) {
+      if (g.tlTaskId) {
+        if (_pTlIdSet.has(g.tlTaskId)) return true;
+        _orphanedGroupIds.push(g.id); return false;  // bad tlTaskId → orphaned
+      }
+      if (!_hasPjTl) return true;  // JP project (no TL tasks) → keep all
+      if (_pTlNameSet.has(g.type)) return true;  // name match → keep (data cũ)
+      _orphanedGroupIds.push(g.id); return false; // null tlTaskId + no name match → orphaned
+    });
+
+    // Xóa orphaned groups khỏi Supabase (fire-and-forget)
+    if (_orphanedGroupIds.length > 0) {
+      console.log('[sbLoadAll] Xóa', _orphanedGroupIds.length, 'orphaned group(s):', _orphanedGroupIds);
+      _orphanedGroupIds.forEach(function(gid) {
+        _sb.from('rows').delete().eq('group_id', gid).then(function(){});
+        _sb.from('groups').delete().eq('id', gid).then(function(){});
+      });
+    }
+
+    // Sort groups theo thứ tự tl_tasks từ Supabase
     groups.sort(function(a,b) {
       const ai = (a.tlTaskId != null && _pTlIdxMap.has(a.tlTaskId)) ? _pTlIdxMap.get(a.tlTaskId) : Infinity;
       const bi = (b.tlTaskId != null && _pTlIdxMap.has(b.tlTaskId)) ? _pTlIdxMap.get(b.tlTaskId) : Infinity;
@@ -4744,15 +4768,23 @@ function ratingColor(v) {
 
 /* GROUPS — per-group gray shading for easy visual separation */
 function renderGroups(p) {
-  // Filter + sort groups: chỉ giữ groups không bị orphaned (tlTaskId trỏ vào task đã xóa)
-  const _tlIdxRG = new Map((p.tlTasks||[]).map(function(t,i){ return [t.id, i]; }));
-  const _tlIdRGSet = new Set((p.tlTasks||[]).map(function(t){ return t.id; }));
+  // Filter + sort groups theo p.tlTasks
+  const _tlIdxRG   = new Map((p.tlTasks||[]).map(function(t,i){ return [t.id, i]; }));
+  const _tlIdRGSet  = new Set((p.tlTasks||[]).map(function(t){ return t.id; }));
+  const _tlNameRGSet = new Set((p.tlTasks||[]).map(function(t){ return t.name; }));
+  const _hasTl = (p.tlTasks||[]).length > 0;
+
   const groups = [...(p.groups||[])]
     .filter(function(g) {
-      // Groups không có tlTaskId (thêm thủ công) → luôn giữ
-      if (!g.tlTaskId) return true;
-      // Groups có tlTaskId → chỉ giữ nếu task còn tồn tại
-      return _tlIdRGSet.has(g.tlTaskId);
+      if (g.tlTaskId) {
+        // Có tlTaskId → chỉ giữ nếu task đó còn tồn tại
+        return _tlIdRGSet.has(g.tlTaskId);
+      }
+      // Không có tlTaskId:
+      // - Nếu project không có TL task nào → đây là JP project, giữ tất cả
+      if (!_hasTl) return true;
+      // - Nếu project có TL tasks → chỉ giữ nếu type khớp tên 1 TL task (data cũ chưa có tlTaskId)
+      return _tlNameRGSet.has(g.type);
     })
     .sort(function(a,b) {
       const ai = (a.tlTaskId != null && _tlIdxRG.has(a.tlTaskId)) ? _tlIdxRG.get(a.tlTaskId) : Infinity;
