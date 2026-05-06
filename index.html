@@ -2110,9 +2110,9 @@ function renderProjectTimeline(pjs) {
     const allDone = allGrpRows.length>0 && allGrpRows.every(g=>(g.rows||[]).filter(r=>r.dateTo).every(r=>r.doneAt)) && allGrpRows.some(g=>(g.rows||[]).some(r=>r.dateTo));
     const rowDim = allDone ? 'opacity:0.5' : '';
     // Project-level pending check — dùng cho info panel VN (không phụ thuộc group đầu tiên)
-    const pjHasPendingUp = allGrpRows.some(g =>
-      (g.rows||[]).some(r => r.dateTo && !r.doneAt && r.dateTo >= todayStr)
-      || (!p._carryover && (g.rows||[]).some(r => r.dateTo && !r.doneAt))
+    // Áp dụng cho cả groups từ tlTasks lẫn groups thêm thủ công
+    const pjHasPendingUp = (p.groups||[]).some(g =>
+      (g.rows||[]).some(r => r.dateTo >= todayStr && !r.doneAt)
     );
     const carryoverBadge = p._carryover
       ? `<span style="font-size:7px;background:#f39c12;color:#fff;border-radius:3px;padding:1px 4px;margin-left:3px;vertical-align:middle">↩ T.cũ</span>`
@@ -2148,9 +2148,8 @@ function renderProjectTimeline(pjs) {
       const grpNew = (g.rows||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
       const grpRev = (g.rows||[]).filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
       const grpAllDone = (g.rows||[]).some(r=>r.dateTo) && (g.rows||[]).filter(r=>r.dateTo).every(r=>r.doneAt);
-      // Có lịch UP chưa done — kể cả dateTo trước tháng (dự án copy từ tháng cũ)
-      const grpHasPendingUp = (g.rows||[]).some(r=>r.dateTo && !r.doneAt && r.dateTo >= todayStr)
-        || (!p._carryover && (g.rows||[]).some(r=>r.dateTo && !r.doneAt)); // copy từ tháng cũ sang
+      // Có lịch UP chưa done và deadline chưa qua
+      const grpHasPendingUp = (g.rows||[]).some(r => r.dateTo >= todayStr && !r.doneAt);
       // Opacity: done→mờ nhẹ, có UP pending→sáng, không có UP→mờ vừa (tăng lên để dễ đọc)
       const grpOpacity = grpAllDone ? '0.55' : grpHasPendingUp ? '1' : (rowDim ? '0.7' : '0.65');
       // Màu tên hạng mục: khớp với status của row đang pending (mới=xanh, sửa=vàng)
@@ -3046,6 +3045,7 @@ function deleteTlTask(pjId, taskId) {
     cascadedTasks.forEach(function(t){ _sbUpsertTlTask(pjId, t); });
   }
   try { renderContent(); } catch(e) {}
+  _refreshOverviewParts();
   var _delMsg = (relinkTasks.length>0||cascadedTasks.length>0)
     ? ` — Đã nối lại ${relinkTasks.length} task, cập nhật ${cascadedTasks.length} task phụ thuộc` : '';
   if (deletedGroup) _delMsg += ' — Đã xóa hạng mục "'+deletedGroup.type+'"';
@@ -3401,6 +3401,7 @@ function confirmSaveTlTask(pjId, taskId) {
 
   closeModal();
   try { renderContent(); } catch(e) {}
+  _refreshOverviewParts();
   const _insertMsg = insertAfterTaskId ? ' (chèn vào giữa)' : '';
   const _cascadeMsg = cascadedTasks.length > 0 ? ` — Cập nhật ${cascadedTasks.length} task phụ thuộc` : '';
   toast('✓ Đã lưu task tiến độ' + (staff.length>0&&task.lv!=='group' ? ' & đồng bộ hạng mục' : '') + _insertMsg + _cascadeMsg);
@@ -3450,6 +3451,7 @@ function syncTlTaskToGroup(pjId, task) {
     if (existingRow) {
       existingRow.dateFrom = task.start || '';
       existingRow.dateTo   = task.upDate || task.end || '';
+      existingRow._fromTl  = true;
       if (task.status === 'done' && !existingRow.doneAt) {
         existingRow.doneAt = task.actual || localDateStr(new Date());
       }
@@ -3466,13 +3468,18 @@ function syncTlTaskToGroup(pjId, task) {
         upTime:   '18:00',
         note:     '',
         ot:       0,
+        _fromTl:  true,
       });
     }
   });
 
-  // Nhân sự bị bỏ khỏi task → xóa row tương ứng
+  // Nhân sự bị bỏ khỏi task: chỉ xóa rows do TL sync tạo (_fromTl=true)
+  // Rows thêm thủ công (không có _fromTl) → giữ nguyên
   existingRows.forEach(r => {
-    if (!task.staff.includes(r.staff)) removedRows.push(r);
+    if (!task.staff.includes(r.staff)) {
+      if (r._fromTl) removedRows.push(r);
+      else newRows.push(r);
+    }
   });
 
   grp.rows = newRows;
@@ -4664,6 +4671,7 @@ async function markRowDone(pjId, gId, rId) {
   try { refreshStaffSched(pjId); } catch(e) {}
   try { renderSidebar(); } catch(e) {}
   _refreshVnTimeline(pjId);
+  _refreshOverviewParts();
 
   openUpRatingModal(pjId, gId, rId, label, timeStr);
 }
@@ -5124,7 +5132,7 @@ async function addGroup(pjId) {
   const p=getPj(pjId); if(!p) return;
   if(!p.groups) p.groups=[];
   p.groups.push({id:gid(),type:'',rows:[{id:gid(),status:'new',staff:'',qty:0,note:'',ot:0,otNote:'',dateFrom:'',dateTo:'',upTime:'18:00',rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,rate6:0,rate7:0,rate8:0}]});
-  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId);
+  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId); _refreshOverviewParts();
   _sbAuditLog('create', 'groups', p.groups[p.groups.length-1] && p.groups[p.groups.length-1].id || '', 'Thêm hạng mục cho "' + (p.nameVN||p.nameJP||pjId) + '"');
   setTimeout(()=>{ const inputs=document.querySelectorAll(`#rbody-${pjId} .grp-hd .tbl-input-dark`); if(inputs.length) inputs[inputs.length-1].focus(); },50);
   if (window._sbReady) {
@@ -5148,7 +5156,7 @@ async function addRow(pjId,gid2) {
   const p=getPj(pjId); if(!p) return;
   const g=(p.groups||[]).find(g=>g.id===gid2); if(!g) return;
   g.rows.push({id:gid(),status:'new',staff:'',qty:0,note:'',ot:0,otNote:'',dateFrom:'',dateTo:'',upTime:'18:00',rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,rate6:0,rate7:0,rate8:0});
-  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId);
+  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId); _refreshOverviewParts();
   if (window._sbReady) {
     const r = g.rows[g.rows.length - 1];
     if (_needsApproval()) {
@@ -5176,7 +5184,7 @@ async function delGroup(pjId,gid2) {
     }
   }
   p.groups=(p.groups||[]).filter(g=>g.id!==gid2);
-  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId);
+  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId); _refreshOverviewParts();
   _sbAuditLog('delete', 'groups', gid2, 'Xóa hạng mục trong "' + (p.nameVN||p.nameJP||pjId) + '"');
 }
 async function delRow(pjId,gid2,rid) {
@@ -5193,7 +5201,7 @@ async function delRow(pjId,gid2,rid) {
     }
   }
   g.rows=g.rows.filter(r=>r.id!==rid);
-  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId);
+  save(); rebuildGroups(pjId); refreshPjTotals(pjId); _refreshVnTimeline(pjId); _refreshOverviewParts();
 }
 function rebuildGroups(pjId) {
   const p = getPj(pjId); if(!p) return;
@@ -5226,13 +5234,7 @@ function updRow(pjId,gid2,rid,field,val) {
   persistD();
   if (['dateFrom','dateTo','doneAt','status','qty'].includes(field)) {
     clearTimeout(_ovTlRefreshTimer[pjId]);
-    _ovTlRefreshTimer[pjId] = setTimeout(function() {
-      const tlDiv = document.getElementById('overviewTlInner');
-      if (!activePjId && tlDiv) {
-        const csIds = new Set(activeSection==='vn'?(curMonth().projectsVN||[]).map(q=>q.id):(curMonth().projects||[]).map(q=>q.id));
-        tlDiv.innerHTML = renderProjectTimeline(allActiveProjects().filter(q=>csIds.has(q.id)));
-      }
-    }, 1000);
+    _ovTlRefreshTimer[pjId] = setTimeout(function() { _refreshOverviewParts(); }, 1000);
   }
   // Leave conflict check when staff, dateFrom or dateTo changes
   if(['staff','dateFrom','dateTo'].includes(field) && r.staff && (r.dateFrom||r.dateTo)) {
@@ -5269,6 +5271,18 @@ function _refreshVnTimeline(pjId) {
   const p = getPj(pjId); if (!p) return;
   const wrap = document.getElementById('vn-tl-wrap-' + pjId);
   if (wrap) wrap.innerHTML = renderProjectTimeline_VN(p);
+}
+function _refreshOverviewParts() {
+  if (activePjId) return;
+  const pjsAll = allActiveProjects();
+  const curSectionIds = new Set(activeSection==='vn'
+    ? (curMonth().projectsVN||[]).map(p=>p.id)
+    : (curMonth().projects||[]).map(p=>p.id));
+  const pjsTimeline = pjsAll.filter(p => curSectionIds.has(p.id));
+  const tlDiv = document.getElementById('overviewTlInner');
+  if (tlDiv) tlDiv.innerHTML = renderProjectTimeline(pjsTimeline);
+  const ganttBody = document.querySelector('#monthGanttCard .card-body');
+  if (ganttBody) ganttBody.innerHTML = renderMonthGantt(pjsAll);
 }
 
 /* PROJECT CRUD */
