@@ -3033,9 +3033,16 @@ function deleteTlTask(pjId, taskId) {
   relinkTasks.forEach(t=>{ t.dep = deletedTask.dep || ''; });
   p.tlTasks = p.tlTasks.filter(t=>t.id!==taskId);
 
-  // Tìm TẤT CẢ groups liên quan: theo tlTaskId, hoặc fallback theo type (data cũ không có tl_task_id)
+  // Sau khi p.tlTasks đã được cập nhật, xây dựng tập ID còn lại để orphan cleanup
+  const _remainTlIds = new Set((p.tlTasks||[]).map(function(t){ return t.id; }));
+
+  // Xóa groups: (1) khớp tlTaskId chính xác, (2) orphaned (tlTaskId không còn trong p.tlTasks),
+  // (3) fallback tên cho data cũ không có tlTaskId
   var deletedGroups = (p.groups||[]).filter(function(g) {
-    return g.tlTaskId === taskId || (!g.tlTaskId && g.type === deletedTask.name);
+    if (g.tlTaskId === taskId) return true;                          // (1) exact
+    if (g.tlTaskId && !_remainTlIds.has(g.tlTaskId)) return true;  // (2) orphaned
+    if (!g.tlTaskId && g.type === deletedTask.name) return true;    // (3) name fallback
+    return false;
   });
   var deletedGroupIds = new Set(deletedGroups.map(function(g){ return g.id; }));
   if (deletedGroupIds.size > 0) {
@@ -4737,13 +4744,21 @@ function ratingColor(v) {
 
 /* GROUPS — per-group gray shading for easy visual separation */
 function renderGroups(p) {
-  // Sort groups theo thứ tự p.tlTasks để luôn khớp với bảng Tiến độ dự án
+  // Filter + sort groups: chỉ giữ groups không bị orphaned (tlTaskId trỏ vào task đã xóa)
   const _tlIdxRG = new Map((p.tlTasks||[]).map(function(t,i){ return [t.id, i]; }));
-  const groups = [...(p.groups||[])].sort(function(a,b) {
-    const ai = (a.tlTaskId != null && _tlIdxRG.has(a.tlTaskId)) ? _tlIdxRG.get(a.tlTaskId) : Infinity;
-    const bi = (b.tlTaskId != null && _tlIdxRG.has(b.tlTaskId)) ? _tlIdxRG.get(b.tlTaskId) : Infinity;
-    return ai - bi;
-  });
+  const _tlIdRGSet = new Set((p.tlTasks||[]).map(function(t){ return t.id; }));
+  const groups = [...(p.groups||[])]
+    .filter(function(g) {
+      // Groups không có tlTaskId (thêm thủ công) → luôn giữ
+      if (!g.tlTaskId) return true;
+      // Groups có tlTaskId → chỉ giữ nếu task còn tồn tại
+      return _tlIdRGSet.has(g.tlTaskId);
+    })
+    .sort(function(a,b) {
+      const ai = (a.tlTaskId != null && _tlIdxRG.has(a.tlTaskId)) ? _tlIdxRG.get(a.tlTaskId) : Infinity;
+      const bi = (b.tlTaskId != null && _tlIdxRG.has(b.tlTaskId)) ? _tlIdxRG.get(b.tlTaskId) : Infinity;
+      return ai - bi;
+    });
   if (!groups.length) return `<tr><td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : 12}" style="text-align:center;padding:20px;color:var(--gray4)">
     Chưa có hạng mục — bấm <strong style="color:var(--navy)">＋ Thêm hạng mục</strong> ở trên</td></tr>`;
 
