@@ -3943,17 +3943,21 @@ function renderProjectDetail(ci, p) {
         <th style="width:16%">Ghi chú</th>
         <th style="width:7%;text-align:center">OT(h)</th>
         <th style="width:9%;text-align:center">OT lý do</th>
-        ${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? '' : `
-          <th colspan="6" style="text-align:center;font-size:9px;padding:3px 4px;background:#f0f4ff;color:#1a5276;cursor:pointer;white-space:nowrap" onclick="toggleRatingExpand(this,'${activePjId}')">
-            📐 Chuyên môn &nbsp;|&nbsp; 📅 Tiến độ &nbsp;|&nbsp; 🤝 Phối hợp &nbsp;|&nbsp; 💼 Thái độ &nbsp;|&nbsp; 📈 Phát triển &nbsp;|&nbsp; 🌐 Ngoại ngữ &nbsp;<span style="font-size:8px;color:#888">(click mở rộng)</span>
+        ${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? '' : (_isRatingCollapsed() ? `
+          <th style="text-align:center;font-size:10px;padding:3px 8px;background:#f0f4ff;color:#1a5276;cursor:pointer;white-space:nowrap;min-width:78px" onclick="_toggleRatingCollapsed()" title="Bấm để mở rộng 6 nhóm">
+            📊 KPI &nbsp;<span style="font-size:9px;color:#888">▶</span>
           </th>
-        `}
+        ` : `
+          <th colspan="6" style="text-align:center;font-size:9px;padding:3px 4px;background:#f0f4ff;color:#1a5276;cursor:pointer;white-space:nowrap" onclick="_toggleRatingCollapsed()" title="Bấm để gộp về 1 cột KPI">
+            📐 Chuyên môn &nbsp;|&nbsp; 📅 Tiến độ &nbsp;|&nbsp; 🤝 Phối hợp &nbsp;|&nbsp; 💼 Thái độ &nbsp;|&nbsp; 📈 Phát triển &nbsp;|&nbsp; 🌐 Ngoại ngữ &nbsp;<span style="font-size:9px;color:#888">▼</span>
+          </th>
+        `)}
         <th style="width:26px"></th>
       </tr></thead>
       <tbody id="rbody-${p.id}">${renderGroups(p)}</tbody>
       <tfoot id="rfoot-${p.id}">
         <tr style="background:var(--rev-bg);border-top:2px solid var(--navy)">
-          <td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : 15}" style="padding:8px 12px">
+          <td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : (_isRatingCollapsed() ? 10 : 15)}" style="padding:8px 12px">
             <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <span style="font-size:11px;font-weight:700;color:var(--gray4);text-transform:uppercase;letter-spacing:.06em">Tổng dự án:</span>
               <div style="display:flex;align-items:center;gap:6px">
@@ -4154,6 +4158,63 @@ function getAllRatingFields() {
           'rate8','rate9','rate10','rate11','rate12','rate13','rate14','rate15'];
 }
 
+// ── Rating collapse toggle (localStorage, default collapsed) ──
+function _isRatingCollapsed() {
+  const v = localStorage.getItem('rating_collapsed');
+  return v === null ? true : v === '1';
+}
+function _toggleRatingCollapsed() {
+  localStorage.setItem('rating_collapsed', _isRatingCollapsed() ? '0' : '1');
+  renderContent();
+}
+function _ratingKpiColor(v) {
+  if (v == null) return '#9ca3af';
+  if (v >= 8)  return '#10b981';
+  if (v >= 6)  return '#3b82f6';
+  if (v >= 4)  return '#eab308';
+  return '#ef4444';
+}
+function _rowKpiBreakdown(row, section) {
+  const fields = section === 'vn' ? RATING_VN : RATING_JP;
+  const meta = [
+    {id:'A', emoji:'📐', name:'Chuyên môn'},
+    {id:'B', emoji:'📅', name:'Tiến độ'},
+    {id:'C', emoji:'🤝', name:'Phối hợp'},
+    {id:'D', emoji:'💼', name:'Thái độ'},
+    {id:'E', emoji:'📈', name:'Phát triển'},
+    {id:'F', emoji:'🌐', name:'Ngoại ngữ'},
+  ];
+  return meta.map(g => {
+    const gFields = fields.filter(rf => rf.group === g.id);
+    const vals = gFields.map(rf => row[rf.field] || 0).filter(v => v > 0);
+    const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+    return Object.assign({}, g, {avg});
+  });
+}
+function _openRatingGroupPicker(pjId, gId, rowId) {
+  const groups = [
+    {id:'A', emoji:'📐', name:'Chuyên môn'},
+    {id:'B', emoji:'📅', name:'Tiến độ'},
+    {id:'C', emoji:'🤝', name:'Phối hợp'},
+    {id:'D', emoji:'💼', name:'Thái độ'},
+    {id:'E', emoji:'📈', name:'Phát triển'},
+    {id:'F', emoji:'🌐', name:'Ngoại ngữ'},
+  ];
+  const items = groups.map(g => `
+    <button class="btn" style="width:100%;text-align:left;padding:10px 14px;margin-bottom:4px;display:flex;align-items:center;gap:10px;font-size:13px;background:#fafafa"
+      onclick="closeModal();openRatingModal('${x(pjId)}','${x(gId)}','${x(rowId)}','${g.id}','${g.name}','${g.emoji}')">
+      <span style="font-size:18px">${g.emoji}</span>
+      <span style="font-weight:600">${g.name}</span>
+    </button>
+  `).join('');
+  showModal(`
+    <h3 style="margin-bottom:6px">⚙️ Chấm chi tiết theo nhóm</h3>
+    <div style="font-size:11px;color:#888;margin-bottom:12px">Chọn 1 nhóm để mở slider chi tiết từng tiêu chí (0–10).</div>
+    ${items}
+    <div class="modal-ft"><button class="btn" onclick="closeModal()">Đóng</button></div>
+  `);
+}
+
 // ══════════════════════════════════════════════════════
 // KPI CALCULATION ENGINE
 // ══════════════════════════════════════════════════════
@@ -4262,6 +4323,29 @@ function getStaffMonthlyKPIs(staffName, section) {
 /* ── Rating cell: save on oninput so navigation doesn’t lose data ── */
 /* ── Rating Group rendering: 3 compact columns + popup detail ── */
 function renderRatingGroups(pjId, gId, row, dimStyle) {
+  if (_isRatingCollapsed()) {
+    const kpi = calcKPI([row], activeSection, 0, 0, 0);
+    const breakdown = _rowKpiBreakdown(row, activeSection);
+    const dc = _ratingKpiColor(kpi);
+    const display = kpi == null ? '—' : kpi.toFixed(1);
+    const tipLines = breakdown.map(g => `${g.emoji} ${g.name}: ${g.avg>0 ? g.avg.toFixed(1) : '-'}`).join('\n');
+    const tip = `${tipLines}\n──────────────\nTổng KPI: ${kpi == null ? '-' : kpi.toFixed(2)}`;
+    const ts  = row.doneAt ? row.doneAt.slice(11,16) : '';
+    const lbl = row.doneAt ? '✓ Đã UP' : '📊 Đánh giá';
+    return `<td style="padding:3px 6px;min-width:78px;text-align:center;vertical-align:middle;${dimStyle||''}" title="${x(tip)}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <div style="font-size:17px;font-weight:800;color:${dc};line-height:1">${display}</div>
+        <div style="display:flex;gap:3px">
+          <button class="btn btn-xs" style="padding:1px 5px;font-size:10px;background:#fef3c7;color:#92400e;border-color:#fcd34d"
+            onclick="openUpRatingModal('${x(pjId)}','${x(gId)}','${x(row.id)}','${lbl}','${ts}')"
+            title="Chấm nhanh 6 nhóm">⚡</button>
+          <button class="btn btn-xs" style="padding:1px 5px;font-size:10px;background:#e0e7ff;color:#3730a3;border-color:#a5b4fc"
+            onclick="_openRatingGroupPicker('${x(pjId)}','${x(gId)}','${x(row.id)}')"
+            title="Chấm chi tiết theo nhóm">⚙️</button>
+        </div>
+      </div>
+    </td>`;
+  }
   const fields = getRatingFields();
   const grpA = fields.filter(rf=>rf.group==='A');
   const grpB = fields.filter(rf=>rf.group==='B');
@@ -4809,7 +4893,7 @@ function renderGroups(p) {
       const bi = (b.tlTaskId != null && _tlIdxRG.has(b.tlTaskId)) ? _tlIdxRG.get(b.tlTaskId) : Infinity;
       return ai - bi;
     });
-  if (!groups.length) return `<tr><td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : 12}" style="text-align:center;padding:20px;color:var(--gray4)">
+  if (!groups.length) return `<tr><td colspan="${(sessionStorage.getItem('splash_role')||'admin')==='edit' ? 9 : (_isRatingCollapsed() ? 7 : 12)}" style="text-align:center;padding:20px;color:var(--gray4)">
     Chưa có hạng mục — bấm <strong style="color:var(--navy)">＋ Thêm hạng mục</strong> ở trên</td></tr>`;
 
   // High-contrast alternating palette: strong difference between adjacent groups
