@@ -2129,7 +2129,7 @@ function renderProjectTimeline(pjs) {
     const col  = isToday ? '#27ae60' : isHol ? '#e74c3c' : isPrev ? '#bbb' : 'var(--gray4)';
     const bg   = isToday ? 'rgba(39,174,96,.1)' : isHol ? 'rgba(231,76,60,.06)' : isPrev ? 'rgba(0,0,0,.03)' : '';
     const lbl  = isPrev ? `<span style="font-size:6px;opacity:.6">${ds.slice(5,7)}/</span>${d}` : d;
-    return `<th style="width:14px;padding:2px 0;text-align:center;font-size:8px;font-weight:600;color:${col};border-bottom:${PB};border-left:${isPrev?'1px solid #eee':CB};${bg?'background:'+bg:''};white-space:nowrap">${lbl}</th>`;
+    return `<th ${isToday?'id="gantt-today-overview"':''} style="width:14px;padding:2px 0;text-align:center;font-size:8px;font-weight:600;color:${col};border-bottom:${PB};border-left:${isPrev?'1px solid #eee':CB};${bg?'background:'+bg:''};white-space:nowrap">${lbl}</th>`;
   }).join('');
 
   // Day cell builder
@@ -2464,7 +2464,10 @@ function renderMonthOverview(ci) {
   </div>
 
   <div class="card">
-    <div class="card-hd"><span class="card-hd-title">${activeSection==="vn"?"🇻🇳":"🇯🇵"} Chi tiết dự án — ${monthLabel(D.activeMonth)}</span></div>
+    <div class="card-hd">
+      <span class="card-hd-title">${activeSection==="vn"?"🇻🇳":"🇯🇵"} Chi tiết dự án — ${monthLabel(D.activeMonth)}</span>
+      <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:11px;padding:3px 10px" onclick="_scrollGanttToToday('gantt-today-overview')" title="Cuộn đến cột ngày hôm nay">📍 Hôm nay</button>
+    </div>
     <div id="overviewTlInner" style="overflow-x:auto">${renderProjectTimeline(pjsTimeline)}</div>
   </div>
 
@@ -2473,7 +2476,8 @@ function renderMonthOverview(ci) {
   <div class="card" id="monthGanttCard">
     <div class="card-hd">
       <span class="card-hd-title">📅 Lịch công việc nhân sự</span>
-      <span style="font-size:10px;color:rgba(255,255,255,.5)">Tất cả dự án · Ai đang làm gì · Deadline · Ai rảnh</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.5);flex:1">Tất cả dự án · Ai đang làm gì · Deadline · Ai rảnh</span>
+      <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:11px;padding:3px 10px" onclick="_scrollGanttToToday('gantt-today-month')" title="Cuộn đến cột ngày hôm nay">📍 Hôm nay</button>
     </div>
     <div class="card-body" style="padding:0">
       ${renderMonthGantt(pjsAll)}
@@ -2492,6 +2496,12 @@ function localDateStr(d) {
   const m = String(d.getMonth()+1).padStart(2,'0');
   const day = String(d.getDate()).padStart(2,'0');
   return y + '-' + m + '-' + day;
+}
+
+function _scrollGanttToToday(markerId) {
+  const el = document.getElementById(markerId);
+  if (!el) { toast('Tháng này không chứa hôm nay', 1800); return; }
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
 }
 
 function getHolidays() {
@@ -2621,7 +2631,7 @@ function renderMonthGantt(pjs) {
     const bg=isToday?'var(--gold)':isHoliday?'#c0392b':isPast?'#2c3e50':'var(--navy)';
     const col=isToday?'var(--navy)':isSun||isSat||isHoliday?'rgba(255,255,255,.45)':isPast?'rgba(255,255,255,.5)':'rgba(255,255,255,.85)';
     const ttl=isHoliday?` title="${holidayMap[dStr]}"`:isToday?' title="Hôm nay"':'';
-    return `<th${ttl} style="min-width:26px;max-width:34px;text-align:center;font-size:9px;padding:2px 1px;background:${bg};color:${col};font-weight:${isToday?'800':'400'};border-left:${isWeekBorder?'2px solid rgba(255,255,255,.3)':'none'};opacity:${isPast&&!isToday?0.75:1}">
+    return `<th${ttl}${isToday?' id="gantt-today-month"':''} style="min-width:26px;max-width:34px;text-align:center;font-size:9px;padding:2px 1px;background:${bg};color:${col};font-weight:${isToday?'800':'400'};border-left:${isWeekBorder?'2px solid rgba(255,255,255,.3)':'none'};opacity:${isPast&&!isToday?0.75:1}">
       <div>${isHoliday?'🔴':dayVN[d.getDay()]}</div><div style="font-size:10px;font-weight:${isToday?800:600}">${d.getDate()}</div>
     </th>`;
   }).join('');
@@ -3779,7 +3789,7 @@ function renderProjectTimeline_VN(p) {
       </td>
       <td style="padding:0;position:relative;min-width:${totalDays*DAY_W}px">
         <div style="position:relative;height:20px;width:${totalDays*DAY_W}px">
-          <div style="position:absolute;top:0;bottom:0;left:${todayX}px;width:1.5px;background:#ef4444;opacity:.5;z-index:1"></div>
+          <div id="gantt-today-vn-${p.id}" style="position:absolute;top:0;bottom:0;left:${todayX}px;width:1.5px;background:#ef4444;opacity:.5;z-index:1"></div>
           ${ganttBar}${upMarker}${upLabel}${childMarkers}
         </div>
       </td>
@@ -3843,6 +3853,7 @@ function renderProjectTimeline_VN(p) {
           <div style="height:100%;width:${avgProg}%;background:${avgProg>=80?'#22c55e':avgProg>=40?'#3b82f6':'#f59e0b'};border-radius:3px"></div>
         </div>
         <span style="font-size:11px;font-weight:700;color:var(--navy)">${avgProg}%</span>
+        <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:11px;padding:3px 10px" onclick="_scrollGanttToToday('gantt-today-vn-${p.id}')" title="Cuộn đến vạch ngày hôm nay">📍 Hôm nay</button>
         <button class="btn btn-sm" style="background:#e8f4fd;color:#1a5276;border:1px solid #b3d4f5" onclick="exportTlPDF('${p.id}')">📄 Xuất PDF</button>
         <button class="btn btn-gold btn-sm" onclick="openTlTaskModal('${p.id}',null,null)">＋ Thêm</button>
       </div>
