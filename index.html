@@ -691,6 +691,7 @@ body{font-family:'Be Vietnam Pro','Noto Sans JP',sans-serif;font-size:13px;backg
 <script>
 
 const SK = 'phoicanh_v3';
+const PHOTO_RETENTION_MONTHS = 6;  // giữ ảnh các tháng <= N tháng cũ; xóa cứng tháng cũ hơn
 
 // Phase 2: Load toàn bộ D từ Supabase
 async function sbLoadAll() {
@@ -1743,18 +1744,30 @@ async function _sbCopyMonthPhotos(prevMid, newMid, pjIdMap) {
     } catch(e) { console.warn('[Photo] copy slot_0 failed:', pair.prevId, e.message); }
   }
   var np = newMid.split('-'), nY = parseInt(np[0]), nM = parseInt(np[1]);
+  var _delFileCount = 0, _delPjCount = 0;
   for (var mid in D.months) {
     if (mid >= prevMid) continue;
     var mp = mid.split('-'), mY = parseInt(mp[0]), mM = parseInt(mp[1]);
-    if ((nY - mY) * 12 + (nM - mM) <= 2) continue;
+    if ((nY - mY) * 12 + (nM - mM) <= PHOTO_RETENTION_MONTHS) continue;
     var pjs = (D.months[mid].projects||[]).concat(D.months[mid].projectsVN||[]);
     for (var k = 0; k < pjs.length; k++) {
       var pjId = pjs[k].id;
       var paths = [];
       for (var s = 0; s < 6; s++) paths.push(mid + '/' + pjId + '/slot_' + s + '.jpg');
-      try { await _sb.storage.from('project-photos').remove(paths); } catch(e) {}
+      var _hadFiles = false;
+      try {
+        var _rmRes = await _sb.storage.from('project-photos').remove(paths);
+        if (_rmRes && Array.isArray(_rmRes.data) && _rmRes.data.length) {
+          _delFileCount += _rmRes.data.length;
+          _hadFiles = true;
+        }
+      } catch(e) {}
       try { await _sb.from('project_photos').delete().eq('project_id', pjId); } catch(e) {}
+      if (_hadFiles) _delPjCount++;
     }
+  }
+  if (_delFileCount > 0) {
+    try { toast('🧹 Đã dọn ' + _delFileCount + ' ảnh của ' + _delPjCount + ' dự án quá ' + PHOTO_RETENTION_MONTHS + ' tháng', 4000); } catch(e) {}
   }
 }
 
@@ -1825,10 +1838,8 @@ async function doAddMonth(prevMid, newMid) {
     targetRev:  srcMonth.targetRev || 0,
   };
 
-  // ── Xóa ảnh tháng cũ (prevMid) ──
-  [...(D.months[prevMid]?.projects||[]),...(D.months[prevMid]?.projectsVN||[])].forEach(p => {
-    p.photos = [];
-  });
+  // ── Giữ NGUYÊN p.photos của prevMid trong D để hỗ trợ "Tải đầy đủ từ lịch sử" ──
+  // (storage file vẫn còn — chỉ tháng > PHOTO_RETENTION_MONTHS mới bị xóa cứng ở _sbCopyMonthPhotos)
 
   if (window._sbReady) {
     try { await _sb.from('months').upsert({ id: newMid, target_new: srcMonth.targetNew || 0, target_rev: srcMonth.targetRev || 0 }); }
@@ -1842,7 +1853,7 @@ async function doAddMonth(prevMid, newMid) {
   if (window._sbReady) _sbCopyMonthPhotos(prevMid, newMid, _pjIdMap);
 
   const newPjCount = (D.months[newMid].projects.length) + (D.months[newMid].projectsVN.length);
-  toast(`✓ Sang tháng ${monthLabel(newMid)} — ${newPjCount} dự án được copy, ảnh tháng cũ đã xóa`, 4000);
+  toast(`✓ Sang tháng ${monthLabel(newMid)} — ${newPjCount} dự án được copy`, 4000);
   setTimeout(checkStorageAndWarn, 800);
 }
 
@@ -5695,7 +5706,7 @@ function apLoadHistory(mode) {
   toast(`✅ Đã tải thông tin "${found.nameVN||found.nameJP}" từ lịch sử`);
   apTryLoadHistory();
 }
-function confirmAddPj() {
+async function confirmAddPj() {
   const nVN=document.getElementById('ap-nVN').value.trim();
   const nJP=(document.getElementById('ap-nJP')?.value||'').trim();
   if(!nVN&&!nJP){alert('Vui lòng nhập tên dự án');return;}
@@ -5705,7 +5716,7 @@ function confirmAddPj() {
   if (!isVN && window._apFullSource && window._apFullSource.project) {
     const src = window._apFullSource.project;
     const srcMid = window._apFullSource.monthId;
-    const pj = cloneProjectFromHistory(src, srcMid);
+    const pj = await cloneProjectFromHistory(src, srcMid);
     // Override với input từ form (user có thể đã sửa)
     pj.nameVN    = nVN || pj.nameVN;
     pj.nameJP    = nJP || pj.nameJP;
@@ -6190,7 +6201,7 @@ function findLatestProjectInD(nameVN, nameJP, section) {
   return null;
 }
 
-function cloneProjectFromHistory(srcPj, srcMonthId) {
+async function cloneProjectFromHistory(srcPj, srcMonthId) {
   const newId = 'pj_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
   const newGroups = (srcPj.groups || []).map(g => ({
     id: gid(),
@@ -6206,6 +6217,23 @@ function cloneProjectFromHistory(srcPj, srcMonthId) {
       rate11:0,rate12:0,rate13:0,rate14:0,rate15:0,
     }))
   }));
+
+  // ── Photos: ưu tiên srcPj.photos (URL còn trong D); fallback query project_photos ──
+  let photos = (srcPj.photos || []).filter(Boolean);
+  if (!photos.length && window._sbReady && srcPj.id) {
+    try {
+      const { data: phRows } = await _sb.from('project_photos')
+        .select('slot, storage_path')
+        .eq('project_id', srcPj.id);
+      if (phRows && phRows.length) {
+        const BASE = 'https://kefwrfxeneropihedght.supabase.co/storage/v1/object/public/project-photos/';
+        const rebuilt = [];
+        phRows.forEach(ph => { if (ph.storage_path) rebuilt[ph.slot] = BASE + ph.storage_path; });
+        photos = rebuilt.filter(Boolean);
+      }
+    } catch(e) { console.warn('[cloneFromHistory] photo rebuild failed:', e.message); }
+  }
+
   return {
     id: newId,
     nameVN: srcPj.nameVN || '', nameJP: srcPj.nameJP || '',
@@ -6214,7 +6242,7 @@ function cloneProjectFromHistory(srcPj, srcMonthId) {
     client: srcPj.client || '', buildingType: srcPj.buildingType || '',
     scope: srcPj.scope || '', area: srcPj.area || '',
     groups: newGroups,
-    photos: (srcPj.photos || []).filter(Boolean),
+    photos: photos,
     otLog: [], notes: '',
     _historySrcMonthId: srcMonthId,
   };
