@@ -818,6 +818,62 @@ async function _migrateCarryoverV1() {
 // Expose để debug từ Console nếu cần re-run
 window._migrateCarryoverV1 = _migrateCarryoverV1;
 
+// ── Auto-migrate v2: idempotent, KHÔNG dùng localStorage flag ──
+// Chạy MỖI LẦN load để bắt mọi row carryover còn sót (do data race, edit thủ công, v.v.)
+// Điều kiện giống V1 nhưng loại trừ flag check.
+async function _migrateCarryoverV2() {
+  const monthCount = (D && D.months) ? Object.keys(D.months).length : 0;
+  console.log('[Migrate v2] called. D.months =', monthCount, '| _migratingV2 =', !!window._migratingV2, '| _sbReady =', !!window._sbReady);
+  if (window._migratingV2) { console.log('[Migrate v2] Skip — đang chạy'); return; }
+  if (!D || !D.months || monthCount === 0) { console.log('[Migrate v2] Skip — D.months rỗng'); return; }
+  window._migratingV2 = true;
+
+  try {
+    const toUpdate = [];
+    Object.values(D.months).forEach(m => {
+      [...(m.projects||[]), ...(m.projectsVN||[])].forEach(p => {
+        (p.groups||[]).forEach(g => {
+          (g.rows||[]).forEach(r => {
+            if (!r.fromCarryover
+                && r.staff
+                && (r.qty || 0) === 0
+                && !r.doneAt
+                && !r.dateTo
+                && (r.status === 'new' || r.status === 'rev' || !r.status)) {
+              r.fromCarryover = true;
+              toUpdate.push(r.id);
+            }
+          });
+        });
+      });
+    });
+
+    if (toUpdate.length > 0) {
+      console.log(`[Migrate v2] Auto-set fromCarryover cho ${toUpdate.length} row`);
+      try { persistD(); } catch(e) { console.warn('[Migrate v2] persistD failed:', e.message); }
+      if (window._sbReady) {
+        let sbFails = 0;
+        for (let i = 0; i < toUpdate.length; i += 100) {
+          const batch = toUpdate.slice(i, i + 100);
+          try {
+            const { error } = await _sb.from('rows').update({ from_carryover: true }).in('id', batch);
+            if (error) { sbFails += batch.length; console.warn('[Migrate v2] batch update error:', error.message); }
+          } catch(e) {
+            sbFails += batch.length;
+            console.warn('[Migrate v2] Supabase update failed:', e.message);
+          }
+        }
+        console.log(`[Migrate v2] Supabase synced ${toUpdate.length - sbFails}/${toUpdate.length} row`);
+      }
+      try { renderAll(); } catch(e) {}
+      try { toast(`🔁 Migrate v2: khóa ${toUpdate.length} row carryover`, 4000); } catch(e) {}
+    }
+  } finally {
+    window._migratingV2 = false;
+  }
+}
+window._migrateCarryoverV2 = _migrateCarryoverV2;
+
 // Phase 2: Load toàn bộ D từ Supabase
 async function sbLoadAll() {
   const [
@@ -1717,14 +1773,19 @@ function getPjGlobal(id) {
   return null;
 }
 
+// ── Row có qty được tính vào tổng tháng không? ──
+// Carryover từ tháng cũ chưa UP → KHÔNG tính. Đã UP trong tháng này → vẫn tính.
+function _rowQtyCountable(r) {
+  return !r.fromCarryover || !!r.doneAt;
+}
 function totalNew(p) {
   const a=(p.records||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
-  const b=(p.groups||[]).flatMap(g=>g.rows||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
+  const b=(p.groups||[]).flatMap(g=>g.rows||[]).filter(r=>r.status==='new'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
   return a+b;
 }
 function totalRev(p) {
   const a=(p.records||[]).filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
-  const b=(p.groups||[]).flatMap(g=>g.rows||[]).filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
+  const b=(p.groups||[]).flatMap(g=>g.rows||[]).filter(r=>r.status==='rev'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
   return a+b;
 }
 function totalOT(p) {
@@ -1936,8 +1997,8 @@ async function doAddMonth(prevMid, newMid) {
             dateFrom: rowActive ? r.dateFrom : '',
             dateTo:   rowActive ? r.dateTo   : '',
             doneAt:   rowActive ? ''          : '', // reset doneAt để UP lại được
-            // Đánh dấu carryover từ tháng cũ → lock (chỉ áp dụng row đã KHÔNG còn active)
-            fromCarryover: rowActive ? false : true,
+            // Đánh dấu carryover từ tháng cũ → lock TẤT CẢ row (cả active lẫn inactive)
+            fromCarryover: true,
           };
         })
       }));
@@ -2157,7 +2218,7 @@ function renderHeroStats(ci) {
   const smPerf = {};
   D.settings.staffList.forEach(s => smPerf[s] = 0);
   pjs.forEach(p => {
-    (p.groups||[]).flatMap(g => g.rows||[]).forEach(r => { if(r.staff && smPerf[r.staff] !== undefined) smPerf[r.staff] += (r.qty||0); });
+    (p.groups||[]).flatMap(g => g.rows||[]).forEach(r => { if(r.staff && smPerf[r.staff] !== undefined && _rowQtyCountable(r)) smPerf[r.staff] += (r.qty||0); });
     (p.records||[]).forEach(r => { if(r.staff && smPerf[r.staff] !== undefined) smPerf[r.staff] += (r.qty||0); });
   });
   const maxPerf = Math.max(1, ...Object.values(smPerf));
@@ -2339,8 +2400,8 @@ function renderProjectTimeline(pjs) {
       const isFirstGrp = gi === 0;
       const isLastGrp = gi === allGrpRows.length - 1;
       const rowBorderB = isLastGrp ? PB : CB;
-      const grpNew = (g.rows||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
-      const grpRev = (g.rows||[]).filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
+      const grpNew = (g.rows||[]).filter(r=>r.status==='new'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
+      const grpRev = (g.rows||[]).filter(r=>r.status==='rev'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
       const grpAllDone = (g.rows||[]).some(r=>r.dateTo) && (g.rows||[]).filter(r=>r.dateTo).every(r=>r.doneAt);
       // Có lịch UP chưa done và deadline chưa qua
       const grpHasPendingUp = (g.rows||[]).some(r => r.dateTo >= todayStr && !r.doneAt);
@@ -2506,7 +2567,7 @@ function renderMonthOverview(ci) {
   const smPerf={};
   D.settings.staffList.forEach(s=>smPerf[s]=0);
   pjs.forEach(p=>{
-    (p.groups||[]).flatMap(g=>g.rows||[]).forEach(r=>{ if(r.staff&&smPerf[r.staff]!==undefined) smPerf[r.staff]+=(r.qty||0); });
+    (p.groups||[]).flatMap(g=>g.rows||[]).forEach(r=>{ if(r.staff&&smPerf[r.staff]!==undefined&&_rowQtyCountable(r)) smPerf[r.staff]+=(r.qty||0); });
     (p.records||[]).forEach(r=>{ if(r.staff&&smPerf[r.staff]!==undefined) smPerf[r.staff]+=(r.qty||0); });
   });
   const maxPerf=Math.max(1,...Object.values(smPerf));
@@ -3033,8 +3094,10 @@ function renderMonthStaffCard(pjs) {
   pjs.forEach(p=>{
     (p.groups||[]).flatMap(g=>g.rows||[]).forEach(r=>{
       if(r.staff&&sm[r.staff]){
-        if(r.status==='new') sm[r.staff].n+=(r.qty||0);
-        else sm[r.staff].r+=(r.qty||0);
+        if(_rowQtyCountable(r)){
+          if(r.status==='new') sm[r.staff].n+=(r.qty||0);
+          else sm[r.staff].r+=(r.qty||0);
+        }
         sm[r.staff].ot+=(r.ot||0);
       }
     });
@@ -3087,8 +3150,10 @@ function updateHeroForProject(p) {
   D.settings.staffList.forEach(s => sm[s] = {n:0, r:0, ot:0});
   (p.groups||[]).flatMap(g => g.rows||[]).forEach(r => {
     if(r.staff && sm[r.staff]) {
-      if(r.status==='new') sm[r.staff].n += (r.qty||0);
-      else sm[r.staff].r += (r.qty||0);
+      if(_rowQtyCountable(r)){
+        if(r.status==='new') sm[r.staff].n += (r.qty||0);
+        else sm[r.staff].r += (r.qty||0);
+      }
       sm[r.staff].ot += (r.ot||0);
     }
   });
@@ -4044,7 +4109,7 @@ function renderProjectDetail(ci, p) {
   const sm={};
   D.settings.staffList.forEach(s=>sm[s]={n:0,r:0,ot:0});
   (p.groups||[]).flatMap(g=>g.rows||[]).forEach(r=>{
-    if(r.staff&&sm[r.staff]){ if(r.status==='new') sm[r.staff].n+=(r.qty||0); else sm[r.staff].r+=(r.qty||0); sm[r.staff].ot+=(r.ot||0); }
+    if(r.staff&&sm[r.staff]){ if(_rowQtyCountable(r)){ if(r.status==='new') sm[r.staff].n+=(r.qty||0); else sm[r.staff].r+=(r.qty||0); } sm[r.staff].ot+=(r.ot||0); }
   });
   (p.otLog||[]).forEach(e=>{if(e.staff&&sm[e.staff])sm[e.staff].ot+=(e.hours||0);});
   const activeS=D.settings.staffList.filter(s=>sm[s].n+sm[s].r+sm[s].ot>0);
@@ -5202,8 +5267,8 @@ function renderGroups(p) {
 
   return groups.map((g, gi) => {
     const rows = g.rows||[];
-    const gNew = rows.filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
-    const gRev = rows.filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
+    const gNew = rows.filter(r=>r.status==='new'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
+    const gRev = rows.filter(r=>r.status==='rev'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
     const gOT  = rows.reduce((s,r)=>s+(r.ot||0),0);
     const gTot = gNew+gRev;
     const gc   = GRP[gi % GRP.length];
@@ -6520,6 +6585,7 @@ async function cloneProjectFromHistory(srcPj, srcMonthId) {
       rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,
       rate6:0,rate7:0,rate8:0,rate9:0,rate10:0,
       rate11:0,rate12:0,rate13:0,rate14:0,rate15:0,
+      fromCarryover: true,
     }))
   }));
 
@@ -6643,7 +6709,9 @@ function renderDashboard() {
   function accum(obj, rows, otLog, records) {
     (rows||[]).forEach(r=>{
       if(r.staff&&obj[r.staff]){
-        if(r.status==='new') obj[r.staff].n+=(r.qty||0); else obj[r.staff].r+=(r.qty||0);
+        if(_rowQtyCountable(r)){
+          if(r.status==='new') obj[r.staff].n+=(r.qty||0); else obj[r.staff].r+=(r.qty||0);
+        }
         obj[r.staff].ot+=(r.ot||0);
         let hasRating=false;
         for(let i=0;i<16;i++){if(r['rate'+i]){hasRating=true;obj[r.staff]['rate'+i+'Sum']+=(r['rate'+i]||0);}}
@@ -7288,8 +7356,10 @@ function getStaffStatsBetween(name, fromDate, toDate) {
           const refDate = r.doneAt ? r.doneAt.slice(0,10) : (r.dateTo || '');
           if (refDate && (refDate < fromDate || refDate > toDate)) return;
           const qty = r.qty || 0;
-          if (r.status === 'new') stats.totalNew += qty;
-          else if (r.status === 'rev') stats.totalRev += qty;
+          if (_rowQtyCountable(r)) {
+            if (r.status === 'new') stats.totalNew += qty;
+            else if (r.status === 'rev') stats.totalRev += qty;
+          }
           stats.totalOTHours += r.ot || 0;
           if (r.doneAt) {
             stats.upTotal++;
@@ -7375,8 +7445,10 @@ function getStaffMonthBreakdown(staffName, fromDate, toDate) {
           const refDate = row.doneAt ? row.doneAt.slice(0,10) : (row.dateTo || '');
           if (refDate && (refDate < fromDate || refDate > toDate)) return;
           const qty = row.qty || 0;
-          if (row.status === 'new') n += qty;
-          else if (row.status === 'rev') r += qty;
+          if (_rowQtyCountable(row)) {
+            if (row.status === 'new') n += qty;
+            else if (row.status === 'rev') r += qty;
+          }
           ot += row.ot || 0;
         });
       });
@@ -8265,7 +8337,9 @@ function getStaffStats(name) {
     [...(m.projects||[]),...(m.projectsVN||[])].forEach(p=>{
       (p.groups||[]).flatMap(g=>g.rows||[]).forEach(r=>{
         if(r.staff===name){
-          if(r.status==='new') mn+=(r.qty||0); else mr+=(r.qty||0);
+          if(_rowQtyCountable(r)){
+            if(r.status==='new') mn+=(r.qty||0); else mr+=(r.qty||0);
+          }
           mot+=(r.ot||0);
           let hasRating=false;
           for(let i=0;i<9;i++){if(r['rate'+i]){hasRating=true;rSums['rate'+i+'Sum']+=(r['rate'+i]||0);}}
@@ -8484,7 +8558,9 @@ function renderStaffPage() {
   pjs.forEach(p=>{
     (p.groups||[]).flatMap(g=>g.rows||[]).forEach(r=>{
       if(r.staff&&sd[r.staff]){
-        if(r.status==='new') sd[r.staff].n+=(r.qty||0); else sd[r.staff].r+=(r.qty||0);
+        if(_rowQtyCountable(r)){
+          if(r.status==='new') sd[r.staff].n+=(r.qty||0); else sd[r.staff].r+=(r.qty||0);
+        }
         sd[r.staff].ot+=(r.ot||0);
         const nm=p.nameVN||p.nameJP||'?';
         if(!sd[r.staff].pjs.includes(nm)) sd[r.staff].pjs.push(nm);
@@ -10096,12 +10172,12 @@ function exportProjectReport(section) {
 
     // Group rows: only type name + new count + rev count
     const groupRows = groups.filter(g=>{
-      const gNew = (g.rows||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
-      const gRev = (g.rows||[]).filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
+      const gNew = (g.rows||[]).filter(r=>r.status==='new'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
+      const gRev = (g.rows||[]).filter(r=>r.status==='rev'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
       return gNew+gRev > 0;
     }).map(g => {
-      const gNew = (g.rows||[]).filter(r=>r.status==='new').reduce((s,r)=>s+(r.qty||0),0);
-      const gRev = (g.rows||[]).filter(r=>r.status==='rev').reduce((s,r)=>s+(r.qty||0),0);
+      const gNew = (g.rows||[]).filter(r=>r.status==='new'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
+      const gRev = (g.rows||[]).filter(r=>r.status==='rev'&&_rowQtyCountable(r)).reduce((s,r)=>s+(r.qty||0),0);
       return `<tr>
         <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0">${x(g.type||'—')}</td>
         <td style="padding:5px 10px;text-align:center;border-bottom:1px solid #f0f0f0;color:#375623;font-weight:600">${gNew||'—'}</td>
@@ -10389,6 +10465,7 @@ window.addEventListener('beforeunload', function() {
           }
         }
         try { await _migrateCarryoverV1(); } catch(e) { console.warn('[Migrate v1] error:', e.message); }
+        try { await _migrateCarryoverV2(); } catch(e) { console.warn('[Migrate v2] error:', e.message); }
         try { renderAll(); } catch(e) {}
         try {
           startRealtimeSync();
@@ -10427,6 +10504,7 @@ window.addEventListener('beforeunload', function() {
             }
           }
           try { await _migrateCarryoverV1(); } catch(e) { console.warn('[Migrate v1] error:', e.message); }
+          try { await _migrateCarryoverV2(); } catch(e) { console.warn('[Migrate v2] error:', e.message); }
           renderAll();
           startRealtimeSync();
           try { checkMorningNotification(); } catch(e) {}
@@ -10448,15 +10526,23 @@ window.addEventListener('beforeunload', function() {
 })();
 
 // ── Fallback migration trigger: nếu login path miss, đảm bảo migration vẫn chạy ──
-// Poll mỗi 1.5s sau 3s đầu, dừng khi flag set hoặc D có data → migrate
+// Poll mỗi 1.5s, dừng khi cả V1 và V2 đã được gọi. V2 chạy MỖI lần load (không guard flag).
 (function _scheduleFallbackMigrate(){
   let tries = 0;
+  let v2Done = false;
   function tick(){
     tries++;
-    if (localStorage.getItem('migrate_carryover_v1') === '1') return; // đã xong
-    if (tries > 20) { console.warn('[Migrate v1 fallback] giving up after 20 tries'); return; }
+    const v1Done = localStorage.getItem('migrate_carryover_v1') === '1';
+    if (v1Done && v2Done) return; // cả 2 đã chạy
+    if (tries > 20) { console.warn('[Migrate fallback] giving up after 20 tries (v1Done=' + v1Done + ', v2Done=' + v2Done + ')'); return; }
     if (D && D.months && Object.keys(D.months).length > 0) {
-      _migrateCarryoverV1().catch(e => console.warn('[Migrate v1 fallback] error:', e.message));
+      if (!v1Done) {
+        _migrateCarryoverV1().catch(e => console.warn('[Migrate v1 fallback] error:', e.message));
+      }
+      if (!v2Done) {
+        _migrateCarryoverV2().catch(e => console.warn('[Migrate v2 fallback] error:', e.message));
+        v2Done = true; // V2 không có flag → chỉ chạy 1 lần tại fallback site này
+      }
       return;
     }
     setTimeout(tick, 1500);
