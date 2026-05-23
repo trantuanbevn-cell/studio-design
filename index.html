@@ -5835,12 +5835,14 @@ function updRow(pjId,gid2,rid,field,val) {
   }
   const col = _COL_MAP[field];
   if (col) {
+    // Không dùng `val || null` vì sẽ corrupt qty=0, ot=0, rate=0 (NOT NULL → 400)
+    var _safeVal = (val === '' || val === undefined) ? null : val;
     if (_needsApproval()) {
       var pObj2 = getPjGlobal(pjId) || getPj(pjId);
       var pName = pObj2 && (pObj2.nameVN || pObj2.nameJP) || pjId;
-      _sbQueueRowDebounced(pjId, gid2, rid, { [col]: val || null }, 'Sửa ' + field + ' → ' + (val || '(xóa)') + ' | ' + pName);
+      _sbQueueRowDebounced(pjId, gid2, rid, { [col]: _safeVal }, 'Sửa ' + field + ' → ' + (val || '(xóa)') + ' | ' + pName);
     } else {
-      _sbSaveRowDebounced(gid2, rid, { [col]: val || null });
+      _sbSaveRowDebounced(gid2, rid, { [col]: _safeVal });
     }
   }
 }
@@ -9479,6 +9481,10 @@ function applyRowChange(payload) {
   var newRow = payload.new;
   var oldId = (payload.old||{}).id || (newRow||{}).id;
   if (!oldId) return;
+  if (typeof _sbRowPending !== 'undefined' && _sbRowPending[oldId]) {
+    console.log('[realtime] skip echo cho row đang pending write:', oldId);
+    return;
+  }
   for (var mKey in D.months) {
     var m = D.months[mKey];
     var allPjs = (m.projects||[]).concat(m.projectsVN||[]);
@@ -9492,14 +9498,20 @@ function applyRowChange(payload) {
         if (payload.eventType === 'DELETE') {
           g.rows.splice(idx, 1);
         } else if (newRow) {
-          g.rows[idx] = { id:newRow.id, staff:newRow.staff, status:newRow.status, qty:newRow.qty,
-            dateFrom:newRow.date_from||'', dateTo:newRow.date_to||'', upTime:newRow.up_time||'',
-            doneAt:newRow.done_at||'', upScore:newRow.up_score, note:newRow.note,
-            ot:newRow.ot, otNote:newRow.ot_note,
-            rate0:newRow.rate0, rate1:newRow.rate1, rate2:newRow.rate2, rate3:newRow.rate3,
-            rate4:newRow.rate4, rate5:newRow.rate5, rate6:newRow.rate6, rate7:newRow.rate7,
-            rate8:newRow.rate8, rate9:newRow.rate9, rate10:newRow.rate10,
-            rate11:newRow.rate11, rate12:newRow.rate12, rate13:newRow.rate13 };
+          // Object.assign — preserve _fromTlTask + các field client-only ngầm
+          Object.assign(g.rows[idx], {
+            id: newRow.id, staff: newRow.staff, status: newRow.status, qty: newRow.qty,
+            dateFrom: newRow.date_from || '', dateTo: newRow.date_to || '',
+            upTime: newRow.up_time || '',
+            doneAt: newRow.done_at || '', upScore: newRow.up_score, note: newRow.note,
+            ot: newRow.ot, otNote: newRow.ot_note,
+            rate0: newRow.rate0, rate1: newRow.rate1, rate2: newRow.rate2, rate3: newRow.rate3,
+            rate4: newRow.rate4, rate5: newRow.rate5, rate6: newRow.rate6, rate7: newRow.rate7,
+            rate8: newRow.rate8, rate9: newRow.rate9, rate10: newRow.rate10,
+            rate11: newRow.rate11, rate12: newRow.rate12, rate13: newRow.rate13,
+            rate14: newRow.rate14, rate15: newRow.rate15,
+            fromCarryover: !!newRow.from_carryover
+          });
         }
         try { renderContent(); } catch(e) {}
         return;
