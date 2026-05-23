@@ -681,3 +681,8 @@ python --version
    (gây infinite loop nếu callback trigger write)
 6. **Không skip `python check_syntax3.py`** dù thay đổi nhỏ
 7. **Không tiếp tục phase tiếp theo** khi còn lỗi chưa giải quyết
+
+---
+
+## Mac setup
+Setup hoàn tất ngày 2026-05-23. Workflow: sửa code → chạy ./deploy.sh
