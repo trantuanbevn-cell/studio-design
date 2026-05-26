@@ -666,7 +666,7 @@ body{font-family:'Be Vietnam Pro','Noto Sans JP',sans-serif;font-size:13px;backg
     <div id="searchDropdown"></div>
   </div>
   <div class="hdr-right">
-    <button class="sync-btn" id="syncBtn" onclick="sbReloadData()" title="Realtime — bấm để tải lại dữ liệu từ Supabase">
+    <button class="sync-btn" id="syncBtn" onclick="(window._sbErrCount > 0) ? _sbToggleErrPanel() : sbReloadData()" title="Realtime — bấm để tải lại dữ liệu từ Supabase (hoặc xem panel lỗi sync nếu có)">
       <span class="dot"></span><span id="syncLabel">Live</span>
     </button>
     <button class="btn btn-sm" id="pendingBtn" style="display:none;background:rgba(255,165,0,.25);color:#FFC000;border-color:rgba(255,165,0,.5);position:relative" onclick="openPendingPanel()" title="Xem và duyệt yêu cầu từ nhân viên">
@@ -729,6 +729,34 @@ body{font-family:'Be Vietnam Pro','Noto Sans JP',sans-serif;font-size:13px;backg
 
 <div id="modalRoot"></div>
 <div id="toastEl" style="display:none" class="toast"></div>
+
+<!-- P3: Sync error panel (toggled by clicking the red sync pill) -->
+<div id="sbErrPanel" style="display:none; position:fixed; top:60px; right:16px;
+     width:380px; max-height:70vh; overflow-y:auto; background:#1f2937;
+     color:#f3f4f6; border:1px solid #374151; border-radius:8px;
+     box-shadow:0 10px 25px rgba(0,0,0,0.5); z-index:9999; font-size:13px;">
+  <div style="padding:12px 16px; border-bottom:1px solid #374151; display:flex;
+       justify-content:space-between; align-items:center; background:#dc2626;
+       border-radius:8px 8px 0 0;">
+    <span style="font-weight:600;">🔴 Sync errors <span id="sbErrPanelCount">0</span></span>
+    <div>
+      <button onclick="_sbClearErrLog()" style="background:#374151; color:#fff;
+              border:none; padding:4px 10px; border-radius:4px; cursor:pointer;
+              font-size:12px; margin-right:4px;">Xóa hết</button>
+      <button onclick="_sbToggleErrPanel()" style="background:transparent; color:#fff;
+              border:none; font-size:18px; cursor:pointer; line-height:1;">×</button>
+    </div>
+  </div>
+  <div id="sbErrPanelBody" style="padding:8px 0;">
+    <div style="padding:24px 16px; text-align:center; color:#9ca3af;">
+      Chưa có lỗi nào.
+    </div>
+  </div>
+  <div style="padding:8px 16px; border-top:1px solid #374151; background:#111827;
+       color:#9ca3af; font-size:11px; border-radius:0 0 8px 8px;">
+    💡 Tải lại trang (F5) để thử sync lại các lỗi này.
+  </div>
+</div>
 
 <script>
 
@@ -1100,11 +1128,12 @@ function _sbSaveRowDebounced(groupId, rowId, colData) {
     const _p = _sbRowPending[rowId]; if (!_p) return;
     delete _sbRowPending[rowId]; delete _sbRowDebounce[rowId];
     try {
-      await _sb.from('rows').upsert(
+      const { error } = await _sb.from('rows').upsert(
         { id: rowId, group_id: _p.groupId, ..._p.cols },
         { onConflict: 'id' }
       );
-    } catch(e) { console.warn('[Phase 5] row upsert failed:', e.message); }
+      if (error) _sbReport('updRow', error, {op: 'upsert', table: 'rows'});
+    } catch(e) { _sbReport('updRow', e, {op: 'upsert', table: 'rows'}); }
   }, 1500);
 }
 const _COL_MAP = {
@@ -1640,6 +1669,130 @@ function toast(msg, dur=2800) {
   const t = document.getElementById('toastEl');
   t.textContent = msg; t.style.display='block';
   clearTimeout(t._t); t._t = setTimeout(()=>t.style.display='none', dur);
+}
+
+// ── P3: Sync error reporting ──────────────────────────────────────
+window._sbErrLog = [];           // ring buffer: {ts, ctx, op, table, msg}
+window._sbErrCount = 0;          // total errors since page load
+let _sbErrLastToastTs = 0;       // throttle "first error" toast
+const _SB_ERR_LOG_MAX = 50;
+const _SB_ERR_TOAST_THROTTLE_MS = 3000;
+
+function _sbReport(ctx, err, opts) {
+  // ctx: string mô tả thao tác user (vd "addGroup", "updRow.qty")
+  // err: error object hoặc { message } hoặc string
+  // opts: { op, table } optional
+  const msg = (err && err.message) || (typeof err === 'string' ? err : 'unknown error');
+  const entry = {
+    ts: Date.now(),
+    ctx: ctx || 'unknown',
+    op: (opts && opts.op) || '',
+    table: (opts && opts.table) || '',
+    msg: String(msg).slice(0, 200)
+  };
+
+  // Ring buffer: giữ tối đa _SB_ERR_LOG_MAX entry mới nhất
+  window._sbErrLog.push(entry);
+  if (window._sbErrLog.length > _SB_ERR_LOG_MAX) {
+    window._sbErrLog.shift();
+  }
+  window._sbErrCount++;
+
+  // Update pill
+  try { setSyncStatus('error', '🔴 ' + window._sbErrCount + ' lỗi sync'); } catch(e) {}
+
+  // Nếu panel đang mở → re-render để thấy lỗi mới
+  const panel = document.getElementById('sbErrPanel');
+  if (panel && panel.style.display === 'block') {
+    try { _sbRenderErrPanel(); } catch(e) {}
+  }
+
+  // Throttled toast (chỉ toast lỗi đầu tiên trong burst 3s)
+  const now = Date.now();
+  if (now - _sbErrLastToastTs > _SB_ERR_TOAST_THROTTLE_MS) {
+    _sbErrLastToastTs = now;
+    try { toastErr('⚠ Sync lỗi: ' + ctx + ' (' + msg.slice(0, 60) + ')'); } catch(e) {}
+  }
+
+  // Log to console (giữ debug trail)
+  console.warn('[_sbReport]', ctx, '|', msg, opts || '');
+}
+
+// Toggle panel hiển thị / ẩn
+function _sbToggleErrPanel() {
+  const panel = document.getElementById('sbErrPanel');
+  if (!panel) return;
+  if (panel.style.display === 'none' || !panel.style.display) {
+    _sbRenderErrPanel();
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// Render lại danh sách lỗi trong panel
+function _sbRenderErrPanel() {
+  const body = document.getElementById('sbErrPanelBody');
+  const countEl = document.getElementById('sbErrPanelCount');
+  if (!body || !countEl) return;
+
+  const log = window._sbErrLog || [];
+  countEl.textContent = '(' + log.length + ')';
+
+  if (log.length === 0) {
+    body.innerHTML = '<div style="padding:24px 16px; text-align:center; color:#9ca3af;">Chưa có lỗi nào.</div>';
+    return;
+  }
+
+  // Render mới nhất lên đầu
+  const items = log.slice().reverse().map(function(e) {
+    const time = new Date(e.ts).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const tableInfo = (e.op || e.table) ? '<span style="color:#9ca3af; margin-left:6px;">' + (e.op || '') + (e.table ? ' · ' + e.table : '') + '</span>' : '';
+    return (
+      '<div style="padding:10px 16px; border-bottom:1px solid #374151;">' +
+        '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">' +
+          '<span style="font-weight:600; color:#fca5a5;">' + _esc(e.ctx) + '</span>' +
+          '<span style="color:#6b7280; font-size:11px;">' + time + '</span>' +
+        '</div>' +
+        '<div style="color:#d1d5db; word-break:break-word;">' + _esc(e.msg) + tableInfo + '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  body.innerHTML = items;
+}
+
+// Helper escape HTML để tránh XSS
+function _esc(s) {
+  return String(s || '').replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+// Clear ring buffer + counter + ẩn panel
+function _sbClearErrLog() {
+  window._sbErrLog = [];
+  window._sbErrCount = 0;
+  try { setSyncStatus('synced', '🟢 Live'); } catch(e) {}
+  _sbRenderErrPanel();
+  const panel = document.getElementById('sbErrPanel');
+  if (panel) panel.style.display = 'none';
+}
+
+function toastErr(msg, dur) {
+  if (dur === undefined) dur = 5000;
+  const t = document.getElementById('toastEl');
+  if (!t) return;
+  t.textContent = msg;
+  t.style.display = 'block';
+  t.style.background = '#dc2626';  // red-600
+  t.style.color = '#fff';
+  clearTimeout(t._t);
+  t._t = setTimeout(() => {
+    t.style.display = 'none';
+    t.style.background = '';
+    t.style.color = '';
+  }, dur);
 }
 
 function setSyncStatus(state, label) {
@@ -5018,8 +5171,10 @@ async function markRowDone(pjId, gId, rId, overrideDoneAt, overrideUpScore) {
       _sbQueueChange('UP hoàn thành: ' + (r.staff || '?') + ' | ' + ((pObjDone && (pObjDone.nameVN || pObjDone.nameJP)) || pjId),
         'rows', 'update', rId, { done_at: r.doneAt, up_score: r.upScore }, { projectId: pjId });
     } else {
-      try { await _sb.from('rows').update({ done_at: r.doneAt, up_score: r.upScore }).eq('id', rId); }
-      catch(e) { console.warn('[Phase 5] markRowDone failed:', e.message); }
+      try {
+        const { error } = await _sb.from('rows').update({ done_at: r.doneAt, up_score: r.upScore }).eq('id', rId);
+        if (error) _sbReport('markRowDone', error, {op: 'update', table: 'rows'});
+      } catch(e) { _sbReport('markRowDone', e, {op: 'update', table: 'rows'}); }
     }
   }
   const tbody = document.getElementById('rbody-' + pjId);
@@ -5734,9 +5889,11 @@ async function addGroup(pjId) {
         'rows', 'insert', g.rows[0].id, { group_id: g.id, status: '', qty: 0, ot: 0, up_time: '18:00' }, { projectId: pjId });
     } else {
       try {
-        await _sb.from('groups').insert({ id: g.id, project_id: pjId, type: '', sort_order: p.groups.length - 1 });
-        await _sb.from('rows').insert({ id: g.rows[0].id, group_id: g.id, status: '', qty: 0, ot: 0, up_time: '18:00' });
-      } catch(e) { console.warn('[Phase 5] addGroup failed:', e.message); }
+        const { error: err1 } = await _sb.from('groups').insert({ id: g.id, project_id: pjId, type: '', sort_order: p.groups.length - 1 });
+        if (err1) _sbReport('addGroup (groups)', err1, {op: 'insert', table: 'groups'});
+        const { error: err2 } = await _sb.from('rows').insert({ id: g.rows[0].id, group_id: g.id, status: '', qty: 0, ot: 0, up_time: '18:00' });
+        if (err2) _sbReport('addGroup (rows)', err2, {op: 'insert', table: 'rows'});
+      } catch(e) { _sbReport('addGroup (groups+rows)', e, {op: 'insert', table: 'groups+rows'}); }
     }
   }
 }
@@ -5753,8 +5910,10 @@ async function addRow(pjId,gid2) {
       _sbQueueChange('Thêm dòng vào "' + pNameAR + '"',
         'rows', 'insert', r.id, { group_id: gid2, status: '', qty: 0, ot: 0, up_time: '18:00' }, { projectId: pjId });
     } else {
-      try { await _sb.from('rows').insert({ id: r.id, group_id: gid2, status: '', qty: 0, ot: 0, up_time: '18:00' }); }
-      catch(e) { console.warn('[Phase 5] addRow failed:', e.message); }
+      try {
+        const { error } = await _sb.from('rows').insert({ id: r.id, group_id: gid2, status: '', qty: 0, ot: 0, up_time: '18:00' });
+        if (error) _sbReport('addRow', error, {op: 'insert', table: 'rows'});
+      } catch(e) { _sbReport('addRow', e, {op: 'insert', table: 'rows'}); }
     }
   }
 }
@@ -8176,8 +8335,10 @@ async function saveStaffProfile(name, field, val) {
   };
   const col = COL_STAFF[field];
   if (col && window._sbReady) {
-    try { await _sb.from('staff').update({ [col]: val }).eq('full_name', name); }
-    catch(e) { console.warn('[Phase 6] saveStaffProfile failed:', e.message); }
+    try {
+      const { error } = await _sb.from('staff').update({ [col]: val }).eq('full_name', name);
+      if (error) _sbReport('saveStaffProfile', error, {op: 'update', table: 'staff'});
+    } catch(e) { _sbReport('saveStaffProfile', e, {op: 'update', table: 'staff'}); }
   }
   _sbAuditLog('update', 'staff', name, 'Sửa nhân sự: ' + name + ' — ' + field);
 }
