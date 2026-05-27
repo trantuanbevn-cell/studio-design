@@ -759,6 +759,14 @@ body{font-family:'Be Vietnam Pro','Noto Sans JP',sans-serif;font-size:13px;backg
 </div>
 
 <!-- Staff Feature Step 4: Modal Nghỉ việc (static, toggled by openLeavingModal/closeLeavingModal) -->
+<!-- Staff Detail Modal (overlay center) — opened by openStaffDetailModal -->
+<div id="staffDetailModal" class="modal-bg" style="display:none;">
+  <div class="modal" style="max-width:720px; width:92%; max-height:90vh; padding:0; overflow:hidden; display:flex; flex-direction:column; position:relative;">
+    <button onclick="closeStaffDetailModal()" style="position:absolute; top:10px; right:10px; background:rgba(255,255,255,0.92); border:0.5px solid #d1d5db; font-size:18px; cursor:pointer; color:#374151; padding:2px 10px; line-height:1; z-index:10; border-radius:6px; font-family:inherit;" title="Đóng (Esc)">×</button>
+    <div id="staffDetailModalBody" style="overflow-y:auto; flex:1;"></div>
+  </div>
+</div>
+
 <div id="leavingModal" class="modal-bg" style="display:none;">
   <div class="modal" style="max-width:480px;">
     <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--gray2);padding-bottom:10px;margin-bottom:14px;">
@@ -7422,6 +7430,20 @@ function getLeftStaff()    { return (D.settings.staffList || []).filter(function
 
 // Helper: staffList đã sắp xếp — Management トゥアン luôn đứng đầu
 // Lấy tên nhân sự không có ký hiệu VP (SGN/HAN/Management → chỉ lấy phần tên)
+// Staff Card Redesign Phase A: avatar helpers
+function getStaffInitial(name) {
+  if (!name) return '?';
+  var clean = name.replace(/^(Management|SGN|HAN|HCM)\s+/, '').trim();
+  return (clean[0] || '?').toUpperCase();
+}
+function getStaffAvatarColor(name) {
+  if (!name) return {bg:'#F1EFE8', border:'#D3D1C7', text:'#444441'};
+  if (name.startsWith('Management')) return {bg:'#FAEEDA', border:'#FAC775', text:'#854F0B'};
+  if (name.startsWith('SGN'))        return {bg:'#E1F5EE', border:'#9FE1CB', text:'#0F6E56'};
+  if (name.startsWith('HAN'))        return {bg:'#EEEDFE', border:'#CECBF6', text:'#3C3489'};
+  return {bg:'#F1EFE8', border:'#D3D1C7', text:'#444441'};
+}
+
 function staffShortName(fullName) {
   if (!fullName) return '';
   const parts = fullName.trim().split(' ');
@@ -8976,70 +8998,90 @@ function renderStaffPage() {
         return lf<=today&&lt>=today;
       });
 
-      return `<div class="card" style="border-top:3px solid ${leaveToday?'#E74C3C':perfColor}${isStaffLeft(s) ? '; opacity:0.7; background:#f3f4f6; border-left:4px solid #6b7280' : ''}">
-        <!-- Card header: name + role + actions -->
-        <div class="card-hd" style="flex-wrap:wrap;gap:6px">
-          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-            <div style="width:34px;height:34px;border-radius:50%;background:${perfColor};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff;flex-shrink:0">${s.charAt(0)}</div>
-            <div style="min-width:0">
-              <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s}</div>
-              <div>
-                <input value="${x(prof.role||'')}" placeholder="Chức vụ…"
-                  style="background:transparent;border:none;color:var(--gold2);font-size:10px;outline:none;width:130px;font-family:inherit"
-                  onchange="saveStaffProfile('${s}','role',this.value)">
-              </div>
+      const _avt = getStaffAvatarColor(s);
+      const _ini = getStaffInitial(s);
+      const _roleTxt = prof.role || '';
+      const _monthShort = mid.replace(/^\d{4}-/,'').replace(/^0/,'');
+      const _scoreObj = (typeof calcStaffScore === 'function') ? calcStaffScore(s) : {score:0};
+      return `<div class="staff-card" style="background:#fff; border:0.5px solid #e5e7eb; border-radius:12px; overflow:hidden;${isStaffLeft(s)?' opacity:0.7; background:#f3f4f6; border-left:4px solid #6b7280;':''}">
+
+        <!-- Color stripe -->
+        <div style="height:4px; background:${leaveToday ? '#E74C3C' : _avt.text};"></div>
+
+        <!-- Header: avatar 128px LEFT + (name/role/badges TRÊN, buttons DƯỚI) RIGHT -->
+        <div style="padding:16px; display:flex; gap:16px; align-items:stretch;">
+          <div style="width:128px; height:128px; border-radius:50%; background:${_avt.bg}; border:3px solid ${_avt.border}; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:48px; font-weight:500; color:${_avt.text};">${_ini}</div>
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+              <div style="font-size:20px; font-weight:500; color:#111827; line-height:1.2; margin-bottom:6px; word-break:break-word;">${x(s)}</div>
+              <input value="${x(_roleTxt)}" placeholder="Chức vụ chưa cập nhật"
+                style="background:transparent; border:none; color:#6b7280; font-size:13px; font-style:${_roleTxt?'normal':'italic'}; outline:none; width:100%; font-family:inherit; padding:0; line-height:1.3;"
+                onchange="saveStaffProfile('${s}','role',this.value)">
+              ${(leaveToday || isStaffLeaving(s)) ? `
+                <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+                  ${leaveToday ? `<span style="background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600;">🏖 Nghỉ hôm nay</span>` : ''}
+                  ${isStaffLeaving(s) ? (() => {
+                    const _d = daysToLeave(s);
+                    let _label = (_d === null) ? 'Sắp nghỉ'
+                               : (_d < 0)      ? `Quá hạn ${-_d} ngày`
+                               : (_d === 0)    ? 'Nghỉ hôm nay'
+                               : (_d === 1)    ? 'Nghỉ ngày mai'
+                                               : `Còn ${_d} ngày`;
+                    const _u = _d !== null && _d <= 3;
+                    return `<span style="background:${_u?'#fee2e2':'#fef3c7'}; color:${_u?'#991b1b':'#92400e'}; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600;" title="Ngày nghỉ chính thức: ${getStaffLeaveDate(s)}">⏰ ${_label}</span>`;
+                  })() : ''}
+                </div>
+              ` : ''}
             </div>
-          </div>
-          <div style="display:flex;gap:4px;align-items:center">
-            ${leaveToday?'<span style="background:#e74c3c;color:#fff;font-size:9px;padding:2px 7px;border-radius:99px;font-weight:700">🏖 Nghỉ hôm nay</span>':''}
-            ${isStaffLeaving(s) ? (() => {
-              const _d = daysToLeave(s);
-              let _label;
-              if (_d === null)      _label = 'Sắp nghỉ';
-              else if (_d < 0)      _label = `Quá hạn ${-_d} ngày`;
-              else if (_d === 0)    _label = 'Nghỉ hôm nay';
-              else if (_d === 1)    _label = 'Nghỉ ngày mai';
-              else                  _label = `Còn ${_d} ngày`;
-              const _urgent = _d !== null && _d <= 3;
-              const _bg     = _urgent ? '#fee2e2' : '#fef3c7';
-              const _tx     = _urgent ? '#991b1b' : '#92400e';
-              const _bd     = _urgent ? '#fca5a5' : '#fbbf24';
-              return `<span style="background:${_bg};color:${_tx};border:1px solid ${_bd};padding:2px 8px;border-radius:99px;font-size:9px;font-weight:700;display:inline-flex;align-items:center;gap:3px" title="Ngày nghỉ chính thức: ${getStaffLeaveDate(s)}">⏰ ${_label}</span>`;
-            })() : ''}
-            <button class="btn btn-xs" style="background:#6366f1;color:#fff;border-color:#6366f1" onclick="openStaffReviewModal('${x(s)}')" title="Mở báo cáo đánh giá toàn diện theo kỳ HĐ">📊 Đánh giá năm</button>
-            <button class="btn btn-xs" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.25)" onclick="openAddLeave('${s}')">＋ Nghỉ phép</button>
-            ${getStaffStatus(s) === 'left'
-              ? `<button class="btn btn-xs" style="background:#10b981;color:#fff;border-color:#10b981" onclick="restoreStaff('${x(s)}')">↩ Khôi phục</button>`
-              : `<button class="btn btn-xs" style="background:#fef3c7;color:#92400e;border-color:#fbbf24" onclick="openLeavingModal('${x(s)}')">${getStaffStatus(s) === 'leaving' ? '📅 Đổi ngày nghỉ' : '🚪 Nghỉ việc'}</button>`}
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+              <button onclick="openStaffReviewModal('${x(s)}')" style="padding:7px 10px; background:#EEEDFE; color:#3C3489; border:0.5px solid #CECBF6; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit;" title="Báo cáo đánh giá toàn diện theo kỳ HĐ">📊 Đánh giá</button>
+              <button onclick="openAddLeave('${s}')" style="padding:7px 10px; background:#E6F1FB; color:#0C447C; border:0.5px solid #B5D4F4; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit;">🏖 Nghỉ phép</button>
+              ${getStaffStatus(s) === 'left'
+                ? `<button onclick="restoreStaff('${x(s)}')" style="padding:7px 10px; background:#10b981; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit;">↩ Khôi phục</button>`
+                : `<button onclick="openLeavingModal('${x(s)}')" style="padding:7px 10px; background:#fef3c7; color:#92400e; border:0.5px solid #fbbf24; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; font-family:inherit;">${getStaffStatus(s) === 'leaving' ? '📅 Đổi ngày' : '🚪 Nghỉ việc'}</button>`}
+            </div>
           </div>
         </div>
 
-        <div class="card-body" style="padding:10px 12px">
-          <!-- Performance energy bar -->
-          <div style="margin-bottom:10px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-              <span style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--gray4);font-weight:600">⚡ Hiệu suất tháng</span>
-              <span style="font-size:12px;font-weight:800;color:${perfColor}">${perfPct}%</span>
-            </div>
-            <!-- Energy bar (segmented) -->
-            <div style="height:10px;background:var(--gray2);border-radius:5px;overflow:hidden;display:flex;gap:1px">
-              ${[...Array(10)].map((_,i)=>{
-                const filled = (i+1)*10 <= perfPct;
-                const bg = filled ? perfColor : 'transparent';
-                return `<div style="flex:1;background:${bg};border-radius:1px"></div>`;
-              }).join('')}
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gray4);margin-top:3px">
-              <span>作成: <strong style="color:var(--new-tx)">${v.n}</strong> | 修正: <strong style="color:var(--rev-tx)">${v.r}</strong></span>
-              <span>Tổng: <strong style="color:var(--navy)">${t}</strong> phối cảnh</span>
-            </div>
+        <!-- Hiệu suất tháng -->
+        <div style="padding:12px 16px; background:#f9fafb; border-top:0.5px solid #e5e7eb;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+            <span style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; font-weight:600;">⚡ Hiệu suất tháng ${_monthShort}</span>
+            <span style="font-size:16px; font-weight:700; color:${perfColor};">${perfPct}%</span>
           </div>
+          <div style="height:6px; background:#e5e7eb; border-radius:99px; overflow:hidden;">
+            <div style="width:${Math.min(perfPct,100)}%; height:100%; background:${perfColor};"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-top:5px; font-size:10px; color:#6b7280;">
+            <span>作成: <strong style="color:var(--new-tx)">${v.n}</strong> · 修正: <strong style="color:var(--rev-tx)">${v.r}</strong></span>
+            <span>Tổng: <strong style="color:var(--navy)">${t}</strong> phối cảnh</span>
+          </div>
+        </div>
+
+        <!-- 3 stats: Điểm / Nghỉ / OT -->
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; border-top:0.5px solid #e5e7eb;">
+          <div style="padding:10px 6px; text-align:center; border-right:0.5px solid #e5e7eb;">
+            <div style="font-size:16px; font-weight:700; color:#111827;">${(_scoreObj.score || 0).toFixed(1)}</div>
+            <div style="font-size:10px; color:#6b7280; margin-top:2px;">Điểm tháng</div>
+          </div>
+          <div style="padding:10px 6px; text-align:center; border-right:0.5px solid #e5e7eb;">
+            <div style="font-size:16px; font-weight:700; color:#111827;">${allStats.totalLeaves}</div>
+            <div style="font-size:10px; color:#6b7280; margin-top:2px;">Ngày nghỉ</div>
+          </div>
+          <div style="padding:10px 6px; text-align:center;">
+            <div style="font-size:16px; font-weight:700; color:#111827;">${allStats.totalOT.toFixed(1)}h</div>
+            <div style="font-size:10px; color:#6b7280; margin-top:2px;">OT tích lũy</div>
+          </div>
+        </div>
+
+        <!-- Card luôn hiện nút "Xem chi tiết" → mở modal (focused branch giữ dead code để clean sau) -->
+        ${false ? `
+        <div style="border-top:0.5px solid #e5e7eb; padding:14px;">
 
           <!-- Lũy kế đánh giá: OT + nghỉ + ratings 12 tháng -->
-          <div style="margin-bottom:10px;padding:8px 10px;background:var(--gray1);border-radius:var(--r);border:1px solid var(--gray2)">
+          <div style="margin:10px 0;padding:8px 10px;background:var(--gray1);border-radius:var(--r);border:1px solid var(--gray2)">
             <div style="font-size:10px;color:var(--gray4);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📊 Lũy kế đánh giá nhân viên</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <!-- OT tích lũy -->
               <div style="background:#fff8f2;border-radius:var(--r);padding:7px 9px;border-left:3px solid var(--orange)">
                 <div style="font-size:10px;color:var(--gray4);margin-bottom:2px">⏱ Tổng OT tích lũy</div>
                 <div style="font-size:18px;font-weight:800;color:var(--orange);line-height:1">${allStats.totalOT.toFixed(1)}<span style="font-size:11px;font-weight:500">h</span></div>
@@ -9048,7 +9090,6 @@ function renderStaffPage() {
                   ${allStats.monthStats.filter(m=>m.ot>0).slice(-12).map(m=>`<div style="display:flex;justify-content:space-between"><span>${m.mid.replace(/^20/,'').replace('-','/')}</span><span style="font-weight:600">${m.ot.toFixed(1)}h</span></div>`).join('')}
                 </div>`:'<div style="font-size:9px;color:var(--gray3);margin-top:3px;font-style:italic">Chưa có OT</div>'}
               </div>
-              <!-- Nghỉ phép tích lũy -->
               <div style="background:#fff5f5;border-radius:var(--r);padding:7px 9px;border-left:3px solid #e74c3c">
                 <div style="font-size:10px;color:var(--gray4);margin-bottom:2px">🏖 Tổng ngày nghỉ</div>
                 <div style="font-size:18px;font-weight:800;color:#e74c3c;line-height:1">${allStats.totalLeaves}<span style="font-size:11px;font-weight:500"> ngày</span></div>
@@ -9062,12 +9103,9 @@ function renderStaffPage() {
               </div>
             </div>
 
-            <!-- Rating trend 12 months -->
             ${(()=>{
               const rStats = allStats.monthStats.filter(m=>m.rCount>0).slice(-12);
               if(!rStats.length) return '<div style="font-size:10px;color:var(--gray3);margin-top:8px;font-style:italic;text-align:center">Chưa có đánh giá</div>';
-              const maxW = 100;
-              // Use all JP rating fields for display (covers both sections)
               const allRF = RATING_JP;
               return '<div style="margin-top:8px;border-top:1px solid var(--gray2);padding-top:7px">'
                 + '<div style="font-size:10px;font-weight:600;color:var(--gray4);margin-bottom:5px">⭐ Đánh giá theo tháng (12 tháng gần nhất)</div>'
@@ -9093,18 +9131,6 @@ function renderStaffPage() {
                 + '</div>';
             })()}
           </div>
-
-          <!-- Toggle button to expand details -->
-          <div style="text-align:center;margin:6px 0 2px">
-            <button onclick="toggleStaffDetail('sd-${si}')"
-              id="sd-btn-${si}"
-              style="background:none;border:none;cursor:pointer;font-size:10px;color:var(--gray4);padding:2px 10px;border-radius:99px;border:1px solid var(--gray2)">
-              ▼ Chi tiết (Lương, HĐ, Nghỉ phép)
-            </button>
-          </div>
-
-          <!-- Collapsible detail section -->
-          <div id="sd-${si}" style="display:none">
 
           <!-- OT this month -->
           ${v.ot>0?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:5px 8px;background:#fff8f2;border-radius:var(--r);border-left:3px solid var(--orange)">
@@ -9163,8 +9189,6 @@ function renderStaffPage() {
                 }).join('')
             }
           </div>
-
-          </div><!-- end collapsible -->
 
           <!-- Điểm tổng hợp tháng -->
           ${(()=>{
@@ -9228,8 +9252,14 @@ function renderStaffPage() {
               onchange="saveStaffProfile('${s}','order',+this.value);renderStaffPage()">
             ${v.pjs.length ? '<span style="font-size:10px;color:var(--gray4);margin-left:auto">Dự án: ' + v.pjs.slice(0,2).map(n=>'<span style="background:var(--gray1);padding:1px 5px;border-radius:3px;font-size:9px">'+x(n)+'</span>').join(' ') + '</span>' : ''}
           </div>
+
+          </div><!-- end details inner (focused) -->
+        ` : `
+        <div style="border-top:0.5px solid #e5e7eb; padding:10px 16px; text-align:center;">
+          <button onclick="openStaffDetailModal('${x(s)}')" style="background:transparent; border:none; color:#3b82f6; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;">🔍 Xem chi tiết →</button>
         </div>
-      </div>`;
+        `}
+      </div><!-- end .staff-card -->`;
     }).join('')}
   </div>
   `;
@@ -9851,6 +9881,7 @@ async function saveSettings() {
 /* MODAL */
 function showModal(html) {
   const bg=document.createElement('div'); bg.className='modal-bg'; bg.id='activeModal';
+  bg.style.zIndex = '1001';  // Fix z-index: đè lên static modal-bg (z:999) khi mở từ trong modal cha
   bg.innerHTML=`<div class="modal">${html}</div>`;
   bg.onclick=e=>{if(e.target===bg)closeModal();};
   document.getElementById('modalRoot').appendChild(bg);
@@ -9859,6 +9890,306 @@ function closeModal() { document.getElementById('activeModal')?.remove(); }
 
 /* Staff Feature Step 4: Leaving modal handlers */
 /* Staff Feature Step 7: tab switching + restore staff */
+/* Staff Detail Modal (Phase A refine: thay focus mode inline) */
+var _detailModalStaff = null;
+
+function openStaffDetailModal(name) {
+  if (!name) return;
+  _detailModalStaff = name;
+  var body = document.getElementById('staffDetailModalBody');
+  if (!body) return;
+  body.innerHTML = renderStaffDetailModalContent(name);
+  document.getElementById('staffDetailModal').style.display = 'flex';
+}
+
+function closeStaffDetailModal() {
+  var el = document.getElementById('staffDetailModal');
+  if (el) el.style.display = 'none';
+  _detailModalStaff = null;
+}
+
+function refreshStaffDetailModal() {
+  if (!_detailModalStaff) return;
+  var body = document.getElementById('staffDetailModalBody');
+  if (body) body.innerHTML = renderStaffDetailModalContent(_detailModalStaff);
+}
+
+function renderStaffDetailModalContent(s) {
+  if (!s) return '';
+  const mid = D.activeMonth;
+  const today = localDateStr(new Date());
+  const prof = getStaffProfile(s);
+  const allStats = getStaffStats(s);
+  // Recompute month data (matches renderStaffPage loop logic)
+  const _sm = D.months[mid] || {projects:[], projectsVN:[]};
+  const pjs = [...(_sm.projects||[]), ...(_sm.projectsVN||[])];
+  const v = {n:0, r:0, ot:0, pjs:[]};
+  const _allTotals = {};
+  (D.settings.staffList||[]).forEach(function(n){ _allTotals[n] = 0; });
+  pjs.forEach(function(p) {
+    (p.groups||[]).flatMap(function(g){ return g.rows||[]; }).forEach(function(r) {
+      if (r.staff === s) {
+        if (r.status==='new') v.n += (r.qty||0); else v.r += (r.qty||0);
+        v.ot += (r.ot||0);
+        const nm = p.nameVN||p.nameJP||'?';
+        if (!v.pjs.includes(nm)) v.pjs.push(nm);
+      }
+      if (r.staff && _allTotals[r.staff] !== undefined) _allTotals[r.staff] += (r.qty||0);
+    });
+    (p.otLog||[]).forEach(function(e){ if (e.staff === s) v.ot += (e.hours||0); });
+  });
+  const t = v.n + v.r;
+  const maxTotal = Math.max(1, ...Object.values(_allTotals));
+  const perfPct = maxTotal>0 ? Math.round(t/maxTotal*100) : 0;
+  const perfColor = perfPct>=80?'#27AE60':perfPct>=50?'#F39C12':perfPct>=25?'#E67E22':'#E74C3C';
+  const leaveToday = getStaffLeaves(s).some(function(l){
+    const lf = l.from||l.to, lt = l.to||l.from;
+    return lf<=today && lt>=today;
+  });
+  const _avt = getStaffAvatarColor(s);
+  const _ini = getStaffInitial(s);
+  const _roleTxt = prof.role || '';
+  const _office = s.startsWith('Management')?'MANAGEMENT':s.startsWith('SGN')?'SAIGON':s.startsWith('HAN')?'HANOI':'OTHER';
+  const _monthShort = mid.replace(/^\d{4}-/,'').replace(/^0/,'');
+  const _scoreObj = (typeof calcStaffScore==='function') ? calcStaffScore(s) : {score:0};
+  const si = 'modal';
+  const idx = (D.settings.staffList||[]).indexOf(s);
+
+  return `
+    <!-- Stripe -->
+    <div style="height:6px; background:${leaveToday ? '#E74C3C' : _avt.text};"></div>
+
+    <!-- Header: avatar 96px + name + role + office badge -->
+    <div style="padding:20px 24px 16px; display:flex; gap:16px; align-items:flex-start; border-bottom:0.5px solid #e5e7eb;">
+      <div style="width:96px; height:96px; border-radius:50%; background:${_avt.bg}; border:3px solid ${_avt.border}; display:flex; align-items:center; justify-content:center; font-size:38px; font-weight:500; color:${_avt.text}; flex-shrink:0;">${_ini}</div>
+      <div style="flex:1; min-width:0; padding-right:36px;">
+        <div style="font-size:22px; font-weight:600; color:#111827; margin-bottom:4px; word-break:break-word;">${x(s)}</div>
+        <input value="${x(_roleTxt)}" placeholder="Chức vụ chưa cập nhật"
+          style="background:transparent; border:none; color:#6b7280; font-size:13px; font-style:${_roleTxt?'normal':'italic'}; outline:none; width:100%; font-family:inherit; padding:0; margin-bottom:8px; line-height:1.3;"
+          onchange="saveStaffProfile('${s}','role',this.value);refreshStaffDetailModal()">
+        <div>
+          <span style="display:inline-block; padding:3px 10px; background:${_avt.bg}; color:${_avt.text}; font-size:11px; font-weight:600; border-radius:99px; letter-spacing:0.5px;">${_office}</span>
+          ${leaveToday ? `<span style="display:inline-block; margin-left:6px; padding:3px 10px; background:#fee2e2; color:#991b1b; font-size:11px; font-weight:600; border-radius:99px;">🏖 Nghỉ hôm nay</span>` : ''}
+          ${isStaffLeaving(s) ? (() => {
+            const _d = daysToLeave(s);
+            const _label = (_d === null) ? 'Sắp nghỉ' : (_d < 0) ? `Quá hạn ${-_d} ngày` : (_d === 0) ? 'Nghỉ hôm nay' : (_d === 1) ? 'Nghỉ ngày mai' : `Còn ${_d} ngày`;
+            const _u = _d !== null && _d <= 3;
+            return `<span style="display:inline-block; margin-left:6px; padding:3px 10px; background:${_u?'#fee2e2':'#fef3c7'}; color:${_u?'#991b1b':'#92400e'}; font-size:11px; font-weight:600; border-radius:99px;" title="Ngày nghỉ chính thức: ${getStaffLeaveDate(s)}">⏰ ${_label}</span>`;
+          })() : ''}
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 action buttons -->
+    <div style="padding:12px 24px; display:flex; gap:8px; border-bottom:0.5px solid #e5e7eb;">
+      <button onclick="openStaffReviewModal('${x(s)}')" style="flex:1; padding:8px; background:#EEEDFE; color:#3C3489; border:0.5px solid #CECBF6; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;">📊 Đánh giá năm</button>
+      <button onclick="openAddLeave('${s}')" style="flex:1; padding:8px; background:#E6F1FB; color:#0C447C; border:0.5px solid #B5D4F4; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;">🏖 Nghỉ phép</button>
+      ${getStaffStatus(s) === 'left'
+        ? `<button onclick="restoreStaff('${x(s)}');refreshStaffDetailModal()" style="flex:1; padding:8px; background:#10b981; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;">↩ Khôi phục</button>`
+        : `<button onclick="openLeavingModal('${x(s)}')" style="flex:1; padding:8px; background:#fef3c7; color:#92400e; border:0.5px solid #fbbf24; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;">${isStaffLeaving(s) ? '📅 Đổi ngày' : '🚪 Nghỉ việc'}</button>`}
+    </div>
+
+    <!-- Hiệu suất tháng -->
+    <div style="padding:14px 24px; background:#f9fafb; border-bottom:0.5px solid #e5e7eb;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+        <span style="font-size:13px; color:#6b7280; font-weight:500;">⚡ Hiệu suất tháng ${_monthShort}</span>
+        <span style="font-size:20px; font-weight:700; color:${perfColor};">${perfPct}%</span>
+      </div>
+      <div style="height:6px; background:#e5e7eb; border-radius:99px; overflow:hidden;">
+        <div style="width:${Math.min(perfPct,100)}%; height:100%; background:${perfColor};"></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:#6b7280;">
+        <span>作成: <strong style="color:var(--new-tx)">${v.n}</strong> · 修正: <strong style="color:var(--rev-tx)">${v.r}</strong></span>
+        <span>Tổng: <strong style="color:var(--navy)">${t}</strong> phối cảnh</span>
+      </div>
+    </div>
+
+    <!-- 3 stats -->
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; border-bottom:0.5px solid #e5e7eb;">
+      <div style="padding:12px 8px; text-align:center; border-right:0.5px solid #e5e7eb;">
+        <div style="font-size:20px; font-weight:700; color:#111827;">${(_scoreObj.score||0).toFixed(1)}</div>
+        <div style="font-size:11px; color:#6b7280; margin-top:2px;">Điểm tháng</div>
+      </div>
+      <div style="padding:12px 8px; text-align:center; border-right:0.5px solid #e5e7eb;">
+        <div style="font-size:20px; font-weight:700; color:#111827;">${allStats.totalLeaves}</div>
+        <div style="font-size:11px; color:#6b7280; margin-top:2px;">Ngày nghỉ tích lũy</div>
+      </div>
+      <div style="padding:12px 8px; text-align:center;">
+        <div style="font-size:20px; font-weight:700; color:#111827;">${allStats.totalOT.toFixed(1)}h</div>
+        <div style="font-size:11px; color:#6b7280; margin-top:2px;">OT tích lũy</div>
+      </div>
+    </div>
+
+    <!-- Chi tiết (copy từ card details cũ, với refreshStaffDetailModal cho mọi mutation) -->
+    <div style="padding:16px 24px;">
+
+      <!-- Lũy kế đánh giá: OT + nghỉ + ratings 12 tháng -->
+      <div style="margin-bottom:14px;padding:10px 12px;background:var(--gray1);border-radius:var(--r);border:1px solid var(--gray2)">
+        <div style="font-size:11px;color:var(--gray4);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">📊 Lũy kế đánh giá nhân viên</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:#fff8f2;border-radius:var(--r);padding:8px 10px;border-left:3px solid var(--orange)">
+            <div style="font-size:10px;color:var(--gray4);margin-bottom:2px">⏱ Tổng OT tích lũy</div>
+            <div style="font-size:18px;font-weight:800;color:var(--orange);line-height:1">${allStats.totalOT.toFixed(1)}<span style="font-size:11px;font-weight:500">h</span></div>
+            ${allStats.monthStats.filter(function(m){return m.ot>0;}).length>0?`
+            <div style="font-size:9px;color:var(--gray4);margin-top:4px;line-height:1.6">
+              ${allStats.monthStats.filter(function(m){return m.ot>0;}).slice(-12).map(function(m){return '<div style="display:flex;justify-content:space-between"><span>'+m.mid.replace(/^20/,'').replace('-','/')+'</span><span style="font-weight:600">'+m.ot.toFixed(1)+'h</span></div>';}).join('')}
+            </div>`:'<div style="font-size:9px;color:var(--gray3);margin-top:3px;font-style:italic">Chưa có OT</div>'}
+          </div>
+          <div style="background:#fff5f5;border-radius:var(--r);padding:8px 10px;border-left:3px solid #e74c3c">
+            <div style="font-size:10px;color:var(--gray4);margin-bottom:2px">🏖 Tổng ngày nghỉ</div>
+            <div style="font-size:18px;font-weight:800;color:#e74c3c;line-height:1">${allStats.totalLeaves}<span style="font-size:11px;font-weight:500"> ngày</span></div>
+            ${(prof.leaves||[]).length>0?`
+            <div style="font-size:9px;color:var(--gray4);margin-top:4px;line-height:1.6">
+              ${(prof.leaves||[]).slice(-12).map(function(l){return '<div style="display:flex;justify-content:space-between;gap:4px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(l.from||'?')+(l.to&&l.to!==l.from?'→'+l.to:'')+'</span>'+(l.reason?'<span style="color:var(--gray3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+x(l.reason.substring(0,12))+'</span>':'')+'</div>';}).join('')}
+            </div>`:'<div style="font-size:9px;color:var(--gray3);margin-top:3px;font-style:italic">Chưa có nghỉ phép</div>'}
+          </div>
+        </div>
+
+        ${(()=>{
+          const rStats = allStats.monthStats.filter(function(m){return m.rCount>0;}).slice(-12);
+          if(!rStats.length) return '<div style="font-size:10px;color:var(--gray3);margin-top:8px;font-style:italic;text-align:center">Chưa có đánh giá</div>';
+          const allRF = RATING_JP;
+          return '<div style="margin-top:10px;border-top:1px solid var(--gray2);padding-top:8px">'
+            + '<div style="font-size:10px;font-weight:600;color:var(--gray4);margin-bottom:6px">⭐ Đánh giá theo tháng (12 tháng gần nhất)</div>'
+            + '<div style="display:flex;flex-direction:column;gap:3px">'
+            + rStats.map(function(m){
+                const label = m.mid.replace(/^20/,'').replace('-','/');
+                const cols = '28px ' + allRF.map(function(){return '1fr';}).join(' ');
+                return '<div style="display:grid;grid-template-columns:' + cols + ';gap:2px;align-items:center">'
+                  + '<span style="font-size:9px;color:var(--gray4)">' + label + '</span>'
+                  + allRF.map(function(rf){
+                      const v2 = m[rf.field]||0, pct=v2*10;
+                      return '<div title="' + rf.label + ': ' + v2 + '/10" style="display:flex;align-items:center;gap:1px">'
+                        + '<div style="flex:1;height:4px;background:#eee;border-radius:2px;overflow:hidden"><div style="height:100%;background:' + rf.color + ';width:' + pct + '%"></div></div>'
+                        + '<span style="font-size:7px;color:var(--gray4);width:14px;text-align:right">' + (v2||'') + '</span>'
+                        + '</div>';
+                    }).join('')
+                  + '</div>';
+              }).join('')
+            + '</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px;font-size:8px;color:var(--gray4)">'
+            + allRF.map(function(rf){return '<span style="display:flex;align-items:center;gap:2px"><span style="width:8px;height:3px;background:' + rf.color + ';border-radius:1px;display:inline-block"></span>' + rf.label + '</span>';}).join('')
+            + '</div></div>';
+        })()}
+      </div>
+
+      <!-- OT this month -->
+      ${v.ot>0?`<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;padding:6px 10px;background:#fff8f2;border-radius:var(--r);border-left:3px solid var(--orange)">
+        <span style="font-size:11px;color:var(--gray4)">OT tháng này:</span>
+        <span style="font-weight:700;color:var(--orange)">${v.ot.toFixed(1)}h</span>
+      </div>`:''}
+
+      <!-- Contract / Salary Review Date -->
+      ${renderContractBlock(s, prof, today)}
+
+      <!-- Salary -->
+      <div style="margin-bottom:12px;padding:8px 10px;background:#f8f9ff;border-radius:var(--r);border:1px dashed var(--gray2)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:600;color:var(--gray4);text-transform:uppercase;letter-spacing:.06em">💰 Lương</span>
+          <button onclick="toggleSalary('sal-${si}')" style="background:none;border:none;cursor:pointer;font-size:14px" title="Hiện/ẩn lương">👁</button>
+        </div>
+        <div id="sal-${si}" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="field"><label>Gross</label>
+              <input id="sal-gross-${si}" type="text" value="${_formatMoney(prof.salaryGross)}" placeholder="0"
+                style="font-family:inherit;font-size:12px;text-align:right"
+                title="Lương Gross — tự động tính Net theo luật VN 2026"
+                onchange="_onSalaryChange('${x(s)}','salaryGross',${si},this);refreshStaffDetailModal()">
+              <div style="font-size:9px;color:var(--gray4)">VND / tháng</div>
+            </div>
+            <div class="field"><label>Net</label>
+              <input id="sal-net-${si}" type="text" value="${_formatMoney(prof.salaryNet)}" placeholder="0"
+                style="font-family:inherit;font-size:12px;text-align:right"
+                title="Lương Net — tự động tính Gross theo luật VN 2026"
+                onchange="_onSalaryChange('${x(s)}','salaryNet',${si},this);refreshStaffDetailModal()">
+              <div style="font-size:9px;color:var(--gray4)">VND / tháng</div>
+            </div>
+          </div>
+          <div style="font-size:9px;color:var(--gray4);margin-top:6px;font-style:italic">💡 Quy đổi tự động theo luật VN 2026.</div>
+        </div>
+        <div id="sal-hidden-${si}" style="font-size:12px;color:var(--gray3);font-style:italic">●●●●● / ●●●●●</div>
+      </div>
+
+      <!-- Leave schedule -->
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--gray4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">📅 Lịch nghỉ phép</div>
+        ${(prof.leaves||[]).length===0
+          ? '<div style="font-size:11px;color:var(--gray3);font-style:italic">Chưa có lịch nghỉ</div>'
+          : (prof.leaves||[]).sort(function(a,b){return a.from>b.from?1:-1;}).map(function(l){
+              const isPast = (l.to||l.from) < today;
+              const isActive = (l.from||l.to)<=today && (l.to||l.from)>=today;
+              const days2 = l.from&&l.to ? Math.round((new Date(l.to)-new Date(l.from))/86400000)+1 : 1;
+              return '<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--r);background:'+(isActive?'#fff5f5':isPast?'var(--gray1)':'#fff8f2')+';margin-bottom:4px;border-left:3px solid '+(isActive?'#e74c3c':isPast?'var(--gray3)':'var(--orange)')+'">'
+                + '<div style="flex:1;min-width:0">'
+                + '<div style="font-size:11px;font-weight:600;color:'+(isPast?'var(--gray4)':'var(--dark)')+'">'+(l.from||'?')+' → '+(l.to||l.from||'?')+' ('+days2+' ngày)</div>'
+                + (l.reason?'<div style="font-size:10px;color:var(--gray4)">'+x(l.reason)+'</div>':'')
+                + '</div>'
+                + '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:'+(isActive?'#e74c3c':isPast?'var(--gray2)':'var(--orange)')+';color:#fff;white-space:nowrap">'+(isActive?'Đang nghỉ':isPast?'Đã qua':'Sắp nghỉ')+'</span>'
+                + '<button class="btn btn-xs btn-ghost btn-danger" onclick="delLeave(\''+s+'\',\''+l.id+'\');refreshStaffDetailModal();renderStaffPage()">✕</button>'
+                + '</div>';
+            }).join('')
+        }
+      </div>
+
+      <!-- Điểm tổng hợp tháng + Đi muộn -->
+      ${(()=>{
+        const sc2 = calcStaffScore(s);
+        const scoreColor = sc2.score>=8?'#27ae60':sc2.score>=6?'#f39c12':sc2.score>=4?'#e67e22':'#e74c3c';
+        const latesThisMonth = getLateThisMonth(s);
+        return `<div style="margin-bottom:12px;padding:8px 10px;background:${scoreColor}18;border-radius:var(--r);border-left:3px solid ${scoreColor}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:11px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.05em">⭐ Điểm tháng ${_monthShort}</span>
+            <span style="font-size:18px;font-weight:900;color:${scoreColor}">${sc2.score.toFixed(1)}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;font-size:9px;color:var(--gray4)">
+            <div style="text-align:center;padding:3px;background:#fff;border-radius:3px">
+              <div style="font-weight:700;color:var(--navy);font-size:11px">${sc2.avgRating>0?sc2.avgRating.toFixed(1):'-'}</div>
+              <div>Đánh giá</div>
+            </div>
+            <div style="text-align:center;padding:3px;background:#fff;border-radius:3px">
+              <div style="font-weight:700;color:${sc2.onTimeRate>=0.8?'#27ae60':'#e67e22'};font-size:11px">${sc2.totalUp>0?Math.round(sc2.onTimeRate*100)+'%':'-'}</div>
+              <div>Đúng hạn</div>
+            </div>
+            <div style="text-align:center;padding:3px;background:#fff;border-radius:3px">
+              <div style="font-weight:700;color:${latesThisMonth.length>0?'#e74c3c':'#27ae60'};font-size:11px">${latesThisMonth.length}</div>
+              <div>Đi muộn</div>
+            </div>
+            <div style="text-align:center;padding:3px;background:#fff;border-radius:3px">
+              <div style="font-weight:700;color:var(--orange);font-size:11px">${sc2.ot>0?sc2.ot.toFixed(1)+'h':'-'}</div>
+              <div>OT</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-bottom:12px;border:1px solid var(--gray2);border-radius:var(--r);overflow:hidden">
+          <div style="padding:6px 10px;background:var(--navy2);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:11px;font-weight:700;color:#fff">⏰ Đi muộn tháng ${_monthShort}</span>
+            <button class="btn btn-xs" style="background:#fff;color:var(--navy);font-size:9px;padding:2px 8px"
+              onclick="openLateModal('${s}')">+ Ghi nhận</button>
+          </div>
+          <div style="padding:6px 8px;max-height:140px;overflow-y:auto">
+            ${latesThisMonth.length===0
+              ? '<div style="font-size:10px;color:var(--gray4);text-align:center;padding:8px">Không có ghi nhận đi muộn</div>'
+              : latesThisMonth.sort(function(a,b){return a.date>b.date?-1:1;}).map(function(l){return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--gray1)"><span style="font-size:10px;color:var(--gray4);min-width:72px">'+l.date.slice(5).replace('-','/')+'</span><span style="font-size:11px;font-weight:700;color:#e74c3c">'+l.minutes+' phút</span>'+(l.note?'<span style="font-size:10px;color:var(--gray4);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+x(l.note)+'</span>':'<span style="flex:1"></span>')+'<button class="btn btn-xs btn-ghost btn-danger" onclick="deleteLateRecord(\''+s+'\',\''+l.date+'\');refreshStaffDetailModal();renderStaffPage()">✕</button></div>';}).join('')
+            }
+          </div>
+          ${latesThisMonth.length>0?`<div style="padding:4px 10px;background:var(--gray1);font-size:10px;color:#e74c3c;font-weight:600">
+            Tổng: ${latesThisMonth.length} lần · ${latesThisMonth.reduce(function(s2,l){return s2+(l.minutes||0);},0)} phút
+          </div>`:''}
+        </div>`;
+      })()}
+
+      <!-- Order control -->
+      <div style="padding-top:10px;border-top:1px solid var(--gray1);display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--gray4)">Thứ tự:</span>
+        <input type="number" min="1" max="99" value="${prof.order||idx+1}"
+          style="width:48px;padding:3px 6px;border:1px solid var(--gray2);border-radius:var(--r);font-size:11px;text-align:center"
+          onchange="saveStaffProfile('${s}','order',+this.value);refreshStaffDetailModal();renderStaffPage()">
+        ${v.pjs.length ? '<span style="font-size:10px;color:var(--gray4);margin-left:auto">Dự án: ' + v.pjs.slice(0,2).map(function(n){return '<span style="background:var(--gray1);padding:1px 5px;border-radius:3px;font-size:9px">'+x(n)+'</span>';}).join(' ') + '</span>' : ''}
+      </div>
+    </div>
+  `;
+}
+
 var _leavingModalStaff = null;
 
 function switchStaffTab(tab) {
