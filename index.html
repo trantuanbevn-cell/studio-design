@@ -819,7 +819,7 @@ body{font-family:'Be Vietnam Pro','Noto Sans JP',sans-serif;font-size:13px;backg
 <script>
 
 const SK = 'phoicanh_v3';
-const PHOTO_RETENTION_MONTHS = 6;  // giữ ảnh các tháng <= N tháng cũ; xóa cứng tháng cũ hơn
+const PHOTO_RETENTION_MONTHS = 999;  // unlimited — giữ ảnh lâu dài (cleanup logic ở _sbCopyMonthPhotos effectively disabled)
 // ── Style thống nhất cho trạng thái Đã UP / Hoàn thành ──
 const DONE_COLOR        = '#374151';  // text done — gray gần đen
 const DONE_BAR_COLOR    = '#6b7280';  // bar Gantt done — gray đậm
@@ -2111,7 +2111,7 @@ function addMonth() {
       <div style="display:flex;flex-direction:column;gap:5px">
         <div>📋 <strong>${pjCount} dự án</strong> sẽ được copy sang tháng mới (tên, văn phòng, liên hệ, hạng mục)</div>
         <div>🔄 Số lượng mới/sửa, đánh giá nhân viên sẽ <strong>reset về 0</strong></div>
-        <div>🖼 <strong>${photoCount} ảnh</strong> được copy sang tháng mới, ảnh tháng cũ sẽ <strong>bị xóa</strong></div>
+        <div>🖼 <strong>${pjCount} ảnh đại diện</strong> sẽ được copy sang tháng mới — <strong>ảnh các tháng cũ vẫn giữ nguyên</strong></div>
         ${activeTimeline > 0
           ? `<div style="color:#27ae60">✅ <strong>${activeTimeline} dự án</strong> có timeline kéo sang tháng mới — <strong>giữ nguyên lịch UP</strong></div>`
           : ''}
@@ -11123,6 +11123,9 @@ function openClearPhotosModal() {
 
 // Auto-xóa ảnh tháng cũ — giữ lại 2 tháng gần nhất
 function autoCleanOldPhotos() {
+  // DISABLED — không clean cache ảnh local nữa, giữ data an toàn (PHOTO_RETENTION=999)
+  return 0;
+  // Dead code dưới đây giữ để tham khảo, không thực thi:
   const sorted = Object.keys(D.months).sort().reverse(); // mới → cũ
   const keep = sorted.slice(0, 2); // giữ 2 tháng gần nhất
   const old = sorted.slice(2);
