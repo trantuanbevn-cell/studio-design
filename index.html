@@ -9073,29 +9073,105 @@ function renderStaffPage() {
       + '</div>';
   }
 
-  // Staff Feature Step 7: tab "Đang làm" / "Đã nghỉ"
-  const _staffTab = window._staffTab || 'active';
-  const _activeCount = sortedStaff.filter(n => !isStaffLeft(n)).length;
-  const _leftCount   = sortedStaff.filter(n =>  isStaffLeft(n)).length;
-  const staffToShow  = (_staffTab === 'left')
+  // Staff Feature Step 7+redesign: tab + KPI header + search/filter
+  const _staffTab     = window._staffTab || 'active';
+  const _activeCount  = sortedStaff.filter(n => !isStaffLeft(n)).length;
+  const _leavingCount = sortedStaff.filter(n =>  isStaffLeaving(n)).length;
+  const _leftCount    = sortedStaff.filter(n =>  isStaffLeft(n)).length;
+  const _monthShortHdr = mid.replace(/^\d{4}-/,'').replace(/^0/,'');
+
+  // Compute KPI header stats
+  const _activeNames = sortedStaff.filter(n => !isStaffLeft(n));
+  const _totalOt = _activeNames.reduce(function(s, n){ return s + ((sd[n]||{}).ot||0); }, 0);
+  const _avgPerf = _activeNames.length > 0
+    ? Math.round(_activeNames.reduce(function(sum, n){
+        const v = sd[n]||{n:0,r:0};
+        return sum + (maxTotal > 0 ? (v.n+v.r)/maxTotal*100 : 0);
+      }, 0) / _activeNames.length)
+    : 0;
+
+  // Filter staff theo tab + search + office
+  let staffToShow = (_staffTab === 'left')
     ? sortedStaff.filter(n =>  isStaffLeft(n))
     : sortedStaff.filter(n => !isStaffLeft(n));
+  if (window._staffSearch) {
+    const q = window._staffSearch.toLowerCase();
+    staffToShow = staffToShow.filter(function(s){
+      const prof = getStaffProfile(s);
+      return s.toLowerCase().includes(q) || (prof.role||'').toLowerCase().includes(q);
+    });
+  }
+  if (window._staffOfficeFilter) {
+    staffToShow = staffToShow.filter(function(s){ return s.startsWith(window._staffOfficeFilter); });
+  }
 
-  const _tabHtml = `<div style="display:flex; gap:4px; margin-bottom:16px; border-bottom:2px solid #e5e7eb;">
+  // Header gradient + 4 KPI tiles
+  const _headerHtml = `<div style="background:linear-gradient(135deg,#1e3a8a 0%,#312e81 100%); border-radius:12px; padding:20px 24px; color:#fff; margin-bottom:16px;">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px;">
+      <span style="font-size:26px;">👥</span>
+      <span style="font-size:22px; font-weight:500;">Quản lý Nhân sự</span>
+    </div>
+    <div style="font-size:13px; color:#c7d2fe; margin-bottom:16px;">
+      Hiệu suất và OT theo tháng ${_monthShortHdr}
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
+      <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:12px 8px; text-align:center;">
+        <div style="font-size:24px; font-weight:500;">${_activeCount}</div>
+        <div style="font-size:11px; color:#c7d2fe;">Đang làm</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:12px 8px; text-align:center;">
+        <div style="font-size:24px; font-weight:500; color:#fbbf24;">${_leavingCount}</div>
+        <div style="font-size:11px; color:#c7d2fe;">Sắp nghỉ</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:12px 8px; text-align:center;">
+        <div style="font-size:24px; font-weight:500; color:#34d399;">${_avgPerf}%</div>
+        <div style="font-size:11px; color:#c7d2fe;">HS trung bình</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:12px 8px; text-align:center;">
+        <div style="font-size:24px; font-weight:500;">${_totalOt.toFixed(0)}h</div>
+        <div style="font-size:11px; color:#c7d2fe;">OT tổng</div>
+      </div>
+    </div>
+  </div>`;
+
+  // Search + office filter
+  const _searchHtml = `<div style="display:flex; gap:8px; margin-bottom:14px;">
+    <div style="flex:1; position:relative;">
+      <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:14px;">🔍</span>
+      <input type="text" id="staffSearchInput"
+             placeholder="Tìm tên, chức vụ…"
+             value="${x(window._staffSearch || '')}"
+             oninput="window._staffSearch = this.value; renderStaffPage(); setTimeout(function(){var el=document.getElementById('staffSearchInput'); if(el){el.focus(); el.setSelectionRange(el.value.length, el.value.length);}}, 0);"
+             style="width:100%; padding:8px 12px 8px 36px; font-size:13px; border:0.5px solid #e5e7eb; border-radius:8px; box-sizing:border-box; font-family:inherit;">
+    </div>
+    <select id="staffOfficeFilter"
+            onchange="window._staffOfficeFilter = this.value; renderStaffPage();"
+            style="padding:8px 12px; font-size:13px; border:0.5px solid #e5e7eb; border-radius:8px; min-width:120px; background:#fff; font-family:inherit;">
+      <option value="" ${!window._staffOfficeFilter ? 'selected' : ''}>Tất cả VP</option>
+      <option value="SGN" ${window._staffOfficeFilter === 'SGN' ? 'selected' : ''}>Saigon</option>
+      <option value="HAN" ${window._staffOfficeFilter === 'HAN' ? 'selected' : ''}>Hanoi</option>
+      <option value="Management" ${window._staffOfficeFilter === 'Management' ? 'selected' : ''}>Management</option>
+    </select>
+  </div>`;
+
+  // Tabs với underline + counter pill
+  const _tabHtml = `<div style="display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:16px;">
     <button onclick="switchStaffTab('active')"
-            style="padding:10px 20px; border:none; background:${_staffTab==='active'?'#3b82f6':'transparent'}; color:${_staffTab==='active'?'#fff':'#374151'}; cursor:pointer; border-radius:6px 6px 0 0; font-weight:600; font-family:inherit;">
-      👥 Đang làm (${_activeCount})
+            style="background:transparent; border:none; border-bottom:2px solid ${_staffTab==='active'?'#1e40af':'transparent'}; margin-bottom:-2px; padding:10px 18px; font-size:14px; font-weight:${_staffTab==='active'?'500':'400'}; color:${_staffTab==='active'?'#1e40af':'#6b7280'}; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:inherit;">
+      👤 Đang làm
+      <span style="background:${_staffTab==='active'?'#1e40af':'#e5e7eb'}; color:${_staffTab==='active'?'#fff':'#6b7280'}; padding:1px 9px; border-radius:99px; font-size:12px; font-weight:500;">${_activeCount}</span>
     </button>
     <button onclick="switchStaffTab('left')"
-            style="padding:10px 20px; border:none; background:${_staffTab==='left'?'#6b7280':'transparent'}; color:${_staffTab==='left'?'#fff':'#374151'}; cursor:pointer; border-radius:6px 6px 0 0; font-weight:600; font-family:inherit;">
-      🚪 Đã nghỉ (${_leftCount})
+            style="background:transparent; border:none; border-bottom:2px solid ${_staffTab==='left'?'#1e40af':'transparent'}; margin-bottom:-2px; padding:10px 18px; font-size:14px; font-weight:${_staffTab==='left'?'500':'400'}; color:${_staffTab==='left'?'#1e40af':'#6b7280'}; cursor:pointer; display:flex; align-items:center; gap:8px; font-family:inherit;">
+      🚪 Đã nghỉ
+      <span style="background:${_staffTab==='left'?'#1e40af':'#e5e7eb'}; color:${_staffTab==='left'?'#fff':'#6b7280'}; padding:1px 9px; border-radius:99px; font-size:12px; font-weight:500;">${_leftCount}</span>
     </button>
   </div>`;
 
-  sc.innerHTML = reminderHtml + _tabHtml + `
+  sc.innerHTML = _headerHtml + reminderHtml + _searchHtml + _tabHtml + `
   <!-- Staff grid -->
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
-    ${staffToShow.length === 0 ? `<div style="grid-column:1/-1; padding:30px; text-align:center; color:var(--gray4); font-size:13px;">${_staffTab==='left' ? '🚪 Chưa có nhân sự nào đã nghỉ.' : '👥 Chưa có nhân sự đang làm.'}</div>` : ''}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+    ${staffToShow.length === 0 ? `<div style="grid-column:1/-1; padding:40px 16px; text-align:center; color:#9ca3af; font-size:14px;">${(window._staffSearch || window._staffOfficeFilter) ? '🔍 Không tìm thấy nhân sự phù hợp. <br><a href="#" onclick="window._staffSearch=\'\';window._staffOfficeFilter=\'\';renderStaffPage();return false;" style="color:#3b82f6;">Xóa filter</a>' : (_staffTab==='left' ? '🚪 Chưa có nhân sự nào đã nghỉ.' : '👥 Chưa có nhân sự đang làm.')}</div>` : ''}
     ${staffToShow.map((s,idx)=>{
       const si = idx; // unique numeric ID for DOM elements (avoids Japanese char collisions)
       const v = sd[s]||{n:0,r:0,ot:0,pjs:[]};
@@ -9115,7 +9191,12 @@ function renderStaffPage() {
       const _roleTxt = prof.role || '';
       const _monthShort = mid.replace(/^\d{4}-/,'').replace(/^0/,'');
       const _scoreObj = (typeof calcStaffScore === 'function') ? calcStaffScore(s) : {score:0};
-      return `<div class="staff-card" style="background:#fff; border:0.5px solid #e5e7eb; border-radius:12px; overflow:hidden;${isStaffLeft(s)?' opacity:0.7; background:#f3f4f6; border-left:4px solid #6b7280;':''}">
+      // Redesign: card bg màu office nhạt
+      const _cardBg = s.startsWith('Management') ? '#FEFCF5'
+                    : s.startsWith('SGN')        ? '#F4FBF8'
+                    : s.startsWith('HAN')        ? '#F8F7FE'
+                    : '#fff';
+      return `<div class="staff-card" style="background:${_cardBg}; border:0.5px solid #e5e7eb; border-radius:12px; overflow:hidden;${isStaffLeft(s)?' opacity:0.7; background:#f3f4f6; border-left:4px solid #6b7280;':''}">
 
         <!-- Color stripe -->
         <div style="height:4px; background:${leaveToday ? '#E74C3C' : _avt.text};"></div>
