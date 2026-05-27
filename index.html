@@ -2548,25 +2548,32 @@ function renderProjectTimeline(pjs) {
     const col  = isToday ? '#27ae60' : isHol ? '#e74c3c' : isPrev ? '#bbb' : 'var(--gray4)';
     const bg   = isToday ? 'rgba(39,174,96,.1)' : isHol ? 'rgba(231,76,60,.06)' : isPrev ? 'rgba(0,0,0,.03)' : '';
     const lbl  = isPrev ? `<span style="font-size:6px;opacity:.6">${ds.slice(5,7)}/</span>${d}` : d;
-    return `<th ${isToday?'id="gantt-today-overview"':''} style="width:14px;padding:2px 0;text-align:center;font-size:8px;font-weight:600;color:${col};border-bottom:${PB};border-left:${isPrev?'1px solid #eee':CB};${bg?'background:'+bg:''};white-space:nowrap">${lbl}</th>`;
+    return `<th ${isToday?'id="gantt-today-overview"':''} style="width:14px;padding:2px 0;text-align:center;font-size:9px;font-weight:600;color:${col};border-bottom:${PB};border-left:${isPrev?'1px solid #eee':CB};${bg?'background:'+bg:''};white-space:nowrap">${lbl}</th>`;
   }).join('');
 
-  // Day cell builder
-  function dayCell(ds, barColor, pos, label, isToday, isHol, isLast, showUp) {
+  // Day cell builder — Layout 3 trạng thái:
+  //   A) Group KHÔNG có UP: label TOP-LEFT trên bar
+  //   B) Group có UP, cell ≠ today: label BOTTOM-LEFT dưới bar
+  //   C) Cell TODAY có UP: UP đỏ góc TOP-RIGHT, label nằm bottom (do B)
+  function dayCell(ds, barColor, pos, label, isToday, isHol, isLast, showUp, groupHasUp) {
     const isPrev = ds < `${yr}-${String(mo).padStart(2,'0')}-01`;
     const bg = isToday ? 'rgba(39,174,96,.07)' : isHol ? 'rgba(231,76,60,.04)' : isPrev ? 'rgba(0,0,0,.02)' : 'var(--table-bg)';
     const br = '0';
+    // Label position dynamic: groupHasUp → đẩy xuống dưới bar để tránh UP góc trên
+    const labelPos = groupHasUp ? 'bottom:2px;left:2px;' : 'top:2px;left:2px;';
     const labelHtml = (pos==='start' && label)
-      ? `<div style="position:absolute;top:0;left:2px;font-size:9px;color:${barColor};white-space:nowrap;line-height:1;font-weight:700;z-index:10;pointer-events:none;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff">${label}</div>`
+      ? `<div style="position:absolute;${labelPos}font-size:10px;color:${barColor};white-space:nowrap;line-height:1;font-weight:700;z-index:10;pointer-events:none;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff">${label}</div>`
       : '';
     const bar = barColor
       ? `<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;right:0;height:${GANTT_BAR_H}px;background:${barColor};border-radius:${br}"></div>${labelHtml}`
       : '';
+    // UP góc TOP-RIGHT, bg trắng đặc che chữ dưới (nếu có)
     const upHtml = (isToday && showUp)
-      ? `<div style="position:absolute;top:1px;left:0;right:0;text-align:center;font-size:7px;font-weight:900;color:#e74c3c;line-height:1;z-index:11;text-shadow:0 0 3px #fff,0 0 3px #fff">UP</div>`
+      ? `<div style="position:absolute;top:0;right:0;font-size:9px;font-weight:900;color:#e74c3c;line-height:1;z-index:11;background:rgba(255,255,255,0.95);border-radius:2px;padding:0 2px;text-shadow:0 0 3px #fff,0 0 3px #fff">UP</div>`
       : '';
     const bL = isPrev ? '1px solid #eee' : CB;
-    return `<td style="width:14px;padding:0;position:relative;overflow:visible;background:${bg};border-left:${bL};border-bottom:${isLast?PB:CB}"><div style="height:16px;position:relative;overflow:visible">${bar}${upHtml}</div></td>`;
+    // Container 24px → đủ chỗ label trên/dưới bar + UP góc + padding 2px tách line
+    return `<td style="width:14px;padding:2px 0;position:relative;overflow:visible;background:${bg};border-left:${bL};border-bottom:${isLast?PB:CB}"><div style="height:24px;position:relative;overflow:visible">${bar}${upHtml}</div></td>`;
   }
 
   // Sắp xếp dự án: 大阪 trước, 東京 sau
@@ -2596,7 +2603,7 @@ function renderProjectTimeline(pjs) {
            <span class="badge ${officeBadgeClass(p.office)}" style="font-size:8px;padding:1px 4px">${p.office||'—'}</span>
          </td>
       <td style="padding:4px 4px 1px;border-bottom:none;border-right:${CB};background:var(--table-bg);max-width:175px;overflow:hidden">
-        <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;cursor:pointer;color:${p._carryover?'#888':'var(--navy)'}"
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;cursor:pointer;color:${p._carryover?'#888':'var(--navy)'}"
           onclick="selectPj('${p.id}')" title="${x(p.nameVN||p.nameJP||'—')}">${x(p.nameVN||p.nameJP||'—')}${carryoverBadge}</div>
       </td>
       <td style="padding:2px 3px 1px;border-bottom:none;border-right:${CB};text-align:right;font-size:8px;background:var(--table-bg)"></td>
@@ -2607,7 +2614,7 @@ function renderProjectTimeline(pjs) {
         const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;
         const bg=isToday?'rgba(39,174,96,.07)':isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';
         const bL=isPrev?'1px solid #eee':CB;
-        return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:none"><div style="height:8px"></div></td>`;
+        return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:none"><div style="height:12px"></div></td>`;
       }).join('')}
       <td style="border-bottom:none;border-left:${CB};background:var(--table-bg)"></td>
     </tr>` : '';
@@ -2632,6 +2639,9 @@ function renderProjectTimeline(pjs) {
             : (pendingRow?.status==='new' ? '#5a9a35' : '#d4900a'))
         : '#666';  // đậm hơn #bbb để dễ đọc
       const grpNameWeight = grpHasPendingUp && !grpAllDone ? '700' : '500'; // tăng weight
+
+      // Pre-compute: group có UP hôm nay không (để dayCell quyết định label vị trí)
+      const _groupHasUp = (g.rows||[]).some(r => r.dateTo === todayStr && !r.doneAt);
 
       const dayCells = allDays.map((ds, di) => {
         const dow = new Date(ds).getDay();
@@ -2672,8 +2682,8 @@ function renderProjectTimeline(pjs) {
           pos=isStart&&isEnd?'only':isStart?'start':isEnd?'end':'mid';
           if (isStart) label = (g.type||'').replace('パース','').replace('作成','');
         }
-        const showUp = isToday && (g.rows||[]).some(r=>r.dateTo===todayStr&&!r.doneAt);
-        return dayCell(ds, barColor, pos, label, isToday, isHol, isLastGrp, showUp);
+        const showUp = isToday && _groupHasUp;
+        return dayCell(ds, barColor, pos, label, isToday, isHol, isLastGrp, showUp, _groupHasUp);
       }).join('');
 
       // Ghi chú từ tất cả row trong hạng mục
@@ -2690,18 +2700,18 @@ function renderProjectTimeline(pjs) {
         ${vnInfoCell}
         ${!isVN ? `<td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>` : ''}
         <td style="padding:1px 4px 1px;border-bottom:${rowBorderB};border-right:${CB};${isVN?'border-left:'+CB+';':''}background:var(--table-bg);vertical-align:middle">
-          <div style="font-size:7px;color:${grpNameColor};font-weight:${grpNameWeight};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px;line-height:1.2;">${x(g.type||'—')}${grpAllDone?' ✓':''}</div>
+          <div style="font-size:11px;color:${grpNameColor};font-weight:${grpNameWeight};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px;line-height:1.2;">${x(g.type||'—')}${grpAllDone?' ✓':''}</div>
         </td>
-        <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:8px;font-weight:600;color:#27ae60;background:var(--table-bg);vertical-align:middle">${grpNew||''}</td>
-        <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:8px;font-weight:600;color:#e67e22;background:var(--table-bg);vertical-align:middle">${grpRev||''}</td>
+        <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:10px;font-weight:600;color:#27ae60;background:var(--table-bg);vertical-align:middle">${grpNew||''}</td>
+        <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:10px;font-weight:600;color:#e67e22;background:var(--table-bg);vertical-align:middle">${grpRev||''}</td>
         ${dayCells}
         <td style="padding:1px 5px;border-bottom:${rowBorderB};border-left:${CB};background:var(--table-bg);vertical-align:${isVN&&isFirstGrp?'top':'middle'};${isVN&&isFirstGrp?'min-width:100px':'max-width:90px;overflow:hidden'}">
           ${(isVN&&isFirstGrp)
             ? `<div style="line-height:1.8;padding-top:1px">
-                <div><span style="font-size:8px;font-weight:500;color:#64748b">Khởi công&nbsp;</span><input type="date" class="vn-info-input" value="${x(p.constructionStart||'')}" style="font-size:8px;width:88px" onblur="savePjDetailField('${p.id}','constructionStart',this.value)"></div>
-                <div><span style="font-size:8px;font-weight:500;color:#64748b">Hoàn công&nbsp;</span><input type="date" class="vn-info-input" value="${x(p.constructionEnd||'')}" style="font-size:8px;width:88px" onblur="savePjDetailField('${p.id}','constructionEnd',this.value)"></div>
+                <div><span style="font-size:10px;font-weight:500;color:#64748b">Khởi công&nbsp;</span><input type="date" class="vn-info-input" value="${x(p.constructionStart||'')}" style="font-size:10px;width:88px" onblur="savePjDetailField('${p.id}','constructionStart',this.value)"></div>
+                <div><span style="font-size:10px;font-weight:500;color:#64748b">Hoàn công&nbsp;</span><input type="date" class="vn-info-input" value="${x(p.constructionEnd||'')}" style="font-size:10px;width:88px" onblur="savePjDetailField('${p.id}','constructionEnd',this.value)"></div>
                </div>`
-            : (notes.length?`<div style="font-size:7px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:88px;line-height:1.4" title="${x(notes.join(' | '))}">${x(notes.join(' | '))}</div>`:'')}
+            : (notes.length?`<div style="font-size:10px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:88px;line-height:1.4" title="${x(notes.join(' | '))}">${x(notes.join(' | '))}</div>`:'')}
         </td>
       </tr>`;
     }).join('');
@@ -2709,7 +2719,7 @@ function renderProjectTimeline(pjs) {
     const fallbackRow = (isVN && allGrpRows.length === 0) ? `<tr style="${rowDim}">
       <td style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>
       <td style="padding:4px 6px;border-bottom:${PB};border-right:${CB};color:#aaa;font-size:9px;font-style:italic;background:var(--table-bg)" colspan="3">Chưa có hạng mục</td>
-      ${allDays.map(ds=>{const dow=new Date(ds).getDay();const isToday=ds===todayStr,isHol=holidaySet.has(ds)||dow===0||dow===6;const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;const bg=isToday?'rgba(39,174,96,.07)':isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';const bL=isPrev?'1px solid #eee':CB;return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:${PB}"><div style="height:16px"></div></td>`;}).join('')}
+      ${allDays.map(ds=>{const dow=new Date(ds).getDay();const isToday=ds===todayStr,isHol=holidaySet.has(ds)||dow===0||dow===6;const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;const bg=isToday?'rgba(39,174,96,.07)':isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';const bL=isPrev?'1px solid #eee':CB;return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:${PB}"><div style="height:24px"></div></td>`;}).join('')}
       <td style="border-bottom:${PB};border-left:${CB};background:var(--table-bg)"></td>
     </tr>` : '';
     return pjRow + grpRows + fallbackRow;
@@ -5992,7 +6002,7 @@ function renderStaffSchedule(p) {
     const rowDoneStyle = isPastStaff ? `color:${DONE_COLOR};` : '';
     return `<tr style="border-bottom:1px solid var(--gray2);${rowDoneStyle}">
       <td style="background:${nameBg};padding:5px 8px;min-width:90px;border-right:1px solid var(--gray2);vertical-align:top">
-        <div style="font-weight:700;font-size:11px;color:${nameColor};">${staff}</div>
+        <div style="font-weight:700;font-size:13px;color:${nameColor};">${staff}</div>
         ${isPastStaff?`<div style="font-size:8px;color:${DONE_COLOR}">Đã hoàn thành</div>`:''}
         ${taskSummary}
       </td>
