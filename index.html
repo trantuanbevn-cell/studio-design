@@ -2212,11 +2212,11 @@ async function doAddMonth(prevMid, newMid) {
         ...g,
         rows: (g.rows||[]).map(r => {
           // Giữ nguyên timeline nếu dateTo >= hôm nay (bao gồm lịch UP hôm nay)
-          const rowActive = r.dateTo && r.dateTo >= todayStr;
+          const rowActive = r.dateTo && r.dateTo >= todayStr && !r.doneAt;
           return {
             ...r,
             // Reset số lượng và đánh giá
-            qty: 0,
+            qty: rowActive ? (r.qty||0) : 0,
             ot: 0, otNote: '',
             // Reset rating fields
             rate0:0,rate1:0,rate2:0,rate3:0,rate4:0,rate5:0,
