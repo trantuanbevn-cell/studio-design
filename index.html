@@ -2090,7 +2090,7 @@ function renderMonthStrip() {
   }
 }
 
-function switchMonth(mid) { D.activeMonth=mid; activePjId=null; save(); renderSidebar(); renderContent(); }
+function switchMonth(mid) { D.activeMonth=mid; activePjId=null; save(); renderMonthStrip(); renderSidebar(); renderContent(); }
 function addMonth() {
   const months = Object.keys(D.months).sort();
   const last = months[months.length - 1] || D.activeMonth;
