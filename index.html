@@ -2134,33 +2134,63 @@ function addMonth() {
 async function _sbCopyMonthPhotos(prevMid, newMid, pjIdMap) {
   if (!window._sbReady || !pjIdMap || !pjIdMap.length) return;
   var BASE = 'https://kefwrfxeneropihedght.supabase.co/storage/v1/object/public/project-photos/';
+  console.log('[Photo carryover] Bắt đầu', pjIdMap.length, 'cặp, prevMid=', prevMid, '→ newMid=', newMid);
+  var _okCount = 0, _skipCount = 0, _failCount = 0;
   for (var i = 0; i < pjIdMap.length; i++) {
     var pair = pjIdMap[i];
     var srcPath = prevMid + '/' + pair.prevId + '/slot_0.jpg';
     var dstPath = newMid + '/' + pair.newId + '/slot_0.jpg';
     try {
       var dlRes = await _sb.storage.from('project-photos').download(srcPath);
-      if (dlRes.error || !dlRes.data) continue;
-      var upRes = await _sb.storage.from('project-photos').upload(dstPath, dlRes.data, { contentType: 'image/jpeg', upsert: true });
-      if (!upRes.error) {
-        await _sb.from('project_photos').upsert(
-          { project_id: pair.newId, slot: 0, storage_path: dstPath, month_id: newMid },
-          { onConflict: 'project_id,slot' }
-        );
-        if (!window._sbPhotosByProjectId) window._sbPhotosByProjectId = {};
-        if (!window._sbPhotosByProjectId[pair.newId]) window._sbPhotosByProjectId[pair.newId] = {};
-        var _copiedUrl = BASE + dstPath;
-        window._sbPhotosByProjectId[pair.newId][0] = _copiedUrl;
-        // Cập nhật D ngay để ảnh hiện mà không cần sbLoadAll
-        var _copiedPj = getPj(pair.newId);
-        if (_copiedPj) {
-          if (!_copiedPj.photos) _copiedPj.photos = [];
-          _copiedPj.photos[0] = _copiedUrl;
-          var _grid = document.getElementById('photoGrid-' + pair.newId);
-          if (_grid) _grid.innerHTML = renderPhotoSlots(_copiedPj);
-        }
+      if (dlRes.error) {
+        // File không tồn tại hoặc lỗi khác — log + skip
+        console.log('[Photo carryover] ['+(i+1)+'/'+pjIdMap.length+'] SKIP', pair.prevId, '→', pair.newId, '— download fail:', dlRes.error.message || dlRes.error);
+        _skipCount++;
+        continue;
       }
-    } catch(e) { console.warn('[Photo] copy slot_0 failed:', pair.prevId, e.message); }
+      if (!dlRes.data) {
+        console.log('[Photo carryover] ['+(i+1)+'/'+pjIdMap.length+'] SKIP', pair.prevId, '— no data');
+        _skipCount++;
+        continue;
+      }
+      var upRes = await _sb.storage.from('project-photos').upload(dstPath, dlRes.data, { contentType: 'image/jpeg', upsert: true });
+      if (upRes.error) {
+        console.warn('[Photo carryover] ['+(i+1)+'/'+pjIdMap.length+'] UPLOAD FAIL', pair.newId, '|', upRes.error.message || upRes.error);
+        _sbReport('_sbCopyMonthPhotos (upload)', upRes.error, {op:'upload', table:'project-photos'});
+        _failCount++;
+        continue;
+      }
+      var dbRes = await _sb.from('project_photos').upsert(
+        { project_id: pair.newId, slot: 0, storage_path: dstPath, month_id: newMid },
+        { onConflict: 'project_id,slot' }
+      );
+      if (dbRes.error) {
+        console.warn('[Photo carryover] ['+(i+1)+'/'+pjIdMap.length+'] DB UPSERT FAIL', pair.newId, '|', dbRes.error.message || dbRes.error);
+        _sbReport('_sbCopyMonthPhotos (db)', dbRes.error, {op:'upsert', table:'project_photos'});
+        _failCount++;
+        continue;
+      }
+      if (!window._sbPhotosByProjectId) window._sbPhotosByProjectId = {};
+      if (!window._sbPhotosByProjectId[pair.newId]) window._sbPhotosByProjectId[pair.newId] = {};
+      var _copiedUrl = BASE + dstPath;
+      window._sbPhotosByProjectId[pair.newId][0] = _copiedUrl;
+      var _copiedPj = getPj(pair.newId);
+      if (_copiedPj) {
+        if (!_copiedPj.photos) _copiedPj.photos = [];
+        _copiedPj.photos[0] = _copiedUrl;
+        var _grid = document.getElementById('photoGrid-' + pair.newId);
+        if (_grid) _grid.innerHTML = renderPhotoSlots(_copiedPj);
+      }
+      _okCount++;
+    } catch(e) {
+      console.warn('[Photo carryover] ['+(i+1)+'/'+pjIdMap.length+'] EXCEPTION', pair.prevId, '|', e.message);
+      _sbReport('_sbCopyMonthPhotos', e, {op:'copy', table:'project-photos'});
+      _failCount++;
+    }
+  }
+  console.log('[Photo carryover] DONE — ok='+_okCount+' skip='+_skipCount+' fail='+_failCount+' / total='+pjIdMap.length);
+  if (typeof toast === 'function' && (_okCount + _skipCount + _failCount) > 0) {
+    toast('🖼 Ảnh carryover: ' + _okCount + ' copy OK, ' + _skipCount + ' skip, ' + _failCount + ' fail', 4500);
   }
   var np = newMid.split('-'), nY = parseInt(np[0]), nM = parseInt(np[1]);
   var _delFileCount = 0, _delPjCount = 0;
@@ -2190,6 +2220,213 @@ async function _sbCopyMonthPhotos(prevMid, newMid, pjIdMap) {
   }
 }
 
+// Recovery utility: tìm cặp project (newMid ↔ prevMid) theo name match
+// Copy ảnh từ prev → new + upsert project_photos. Chạy từ Console.
+// Usage: _recoverMissingPhotos('2026-06', '2026-05')
+window._recoverMissingPhotos = async function(newMid, prevMid) {
+  if (!window._sbReady) { console.error('Supabase chưa sẵn sàng'); return; }
+  if (!newMid || !prevMid) { console.error('Usage: _recoverMissingPhotos("2026-06", "2026-05")'); return; }
+  const newM = D.months[newMid];
+  const prevM = D.months[prevMid];
+  if (!newM || !prevM) { console.error('Tháng không tồn tại trong D'); return; }
+  if (!confirm('Recover photos: copy ảnh từ ' + prevMid + ' → ' + newMid + ' cho các project chưa có ảnh?')) return;
+
+  const BASE = 'https://kefwrfxeneropihedght.supabase.co/storage/v1/object/public/project-photos/';
+  const newPjs  = [...(newM.projects||[]),  ...(newM.projectsVN||[])];
+  const prevPjs = [...(prevM.projects||[]), ...(prevM.projectsVN||[])];
+
+  // Build map: matchKey (name + office) → prev project
+  function keyOf(p){ return (p.nameJP||'') + '||' + (p.nameVN||'') + '||' + (p.office||''); }
+  const prevByKey = {};
+  prevPjs.forEach(p => { prevByKey[keyOf(p)] = p; });
+
+  // Filter new pjs chưa có ảnh (p.photos[0] empty hoặc thiếu trong _sbPhotosByProjectId)
+  const targets = newPjs.filter(p => {
+    const hasLocal = (p.photos||[])[0];
+    const hasCache = (window._sbPhotosByProjectId||{})[p.id] && (window._sbPhotosByProjectId[p.id]||{})[0];
+    return !hasLocal && !hasCache;
+  });
+  console.log('[Recover] Tìm thấy', targets.length, '/', newPjs.length, 'project thiếu ảnh');
+
+  let ok=0, skip=0, fail=0;
+  for (let i=0; i<targets.length; i++) {
+    const newP = targets[i];
+    const prevP = prevByKey[keyOf(newP)];
+    if (!prevP) {
+      console.log('['+(i+1)+'/'+targets.length+'] SKIP', newP.nameJP||newP.nameVN, '— không tìm thấy parent');
+      skip++; continue;
+    }
+    const srcPath = prevMid + '/' + prevP.id + '/slot_0.jpg';
+    const dstPath = newMid  + '/' + newP.id  + '/slot_0.jpg';
+    try {
+      const dl = await _sb.storage.from('project-photos').download(srcPath);
+      if (dl.error || !dl.data) {
+        console.log('['+(i+1)+'/'+targets.length+'] SKIP', prevP.id, '— download:', dl.error?.message||'no data');
+        skip++; continue;
+      }
+      const up = await _sb.storage.from('project-photos').upload(dstPath, dl.data, { contentType:'image/jpeg', upsert:true });
+      if (up.error) { console.warn('UPLOAD FAIL:', up.error.message); fail++; continue; }
+      const db = await _sb.from('project_photos').upsert(
+        { project_id: newP.id, slot: 0, storage_path: dstPath, month_id: newMid },
+        { onConflict: 'project_id,slot' }
+      );
+      if (db.error) { console.warn('DB FAIL:', db.error.message); fail++; continue; }
+      // Update local D + cache
+      if (!window._sbPhotosByProjectId) window._sbPhotosByProjectId = {};
+      window._sbPhotosByProjectId[newP.id] = window._sbPhotosByProjectId[newP.id] || {};
+      const newUrl = BASE + dstPath;
+      window._sbPhotosByProjectId[newP.id][0] = newUrl;
+      if (!newP.photos) newP.photos = [];
+      newP.photos[0] = newUrl;
+      console.log('['+(i+1)+'/'+targets.length+'] OK', newP.nameJP||newP.nameVN);
+      ok++;
+    } catch(e) { console.warn('EXCEPTION:', e.message); fail++; }
+  }
+  save();
+  if (typeof renderAll === 'function') renderAll();
+  console.log('=== RECOVER DONE — ok='+ok+' skip='+skip+' fail='+fail+' ===');
+  toast('✓ Recover: ' + ok + ' ảnh OK, ' + skip + ' skip, ' + fail + ' fail', 6000);
+};
+
+// Dump toàn bộ entities của 1 tháng lên Supabase
+// (months + projects + groups + rows + tl_tasks)
+// Dùng cho: doAddMonth sau khi copy, hoặc _emergencyDumpMonth từ Console cho data đã có trong RAM nhưng chưa sync
+async function _sbDumpMonthEntities(mid) {
+  if (!window._sbReady) throw new Error('Supabase chưa sẵn sàng');
+  const m = D.months[mid];
+  if (!m) throw new Error('Tháng ' + mid + ' không có trong D');
+
+  let errors = 0;
+  const allPjs = [
+    ...(m.projects   || []).map(p => ({_pj: p, _section: 'jp'})),
+    ...(m.projectsVN || []).map(p => ({_pj: p, _section: 'vn'}))
+  ];
+
+  // 1. months
+  try {
+    const { error } = await _sb.from('months').upsert({ id: mid, target_new: m.targetNew || 0, target_rev: m.targetRev || 0 });
+    if (error) { _sbReport('_sbDumpMonthEntities (months)', error, {op:'upsert', table:'months'}); errors++; }
+  } catch(e) { _sbReport('_sbDumpMonthEntities (months)', e, {op:'upsert', table:'months'}); errors++; }
+
+  // 2. projects (build payload — dùng cùng schema với _sbSaveProject)
+  const pjPayload = allPjs.map(({_pj: p, _section: sec}) => {
+    const row = {
+      id: p.id, month_id: mid, section: sec,
+      name_vn: p.nameVN || '', name_jp: p.nameJP || '',
+      office: p.office || '', contact: p.contact || '',
+      main_staff: p.mainStaff || '', notes: p.notes || '',
+      is_carryover: !!p._carryover,
+    };
+    if (sec === 'vn') {
+      row.client            = p.client            || null;
+      row.building_type     = p.buildingType      || null;
+      row.scope             = p.scope             || null;
+      row.area              = p.area              || null;
+      row.construction_start= p.constructionStart || null;
+      row.construction_end  = p.constructionEnd   || null;
+    }
+    return row;
+  });
+  if (pjPayload.length) {
+    try {
+      const { error } = await _sb.from('projects').upsert(pjPayload, {onConflict:'id'});
+      if (error) { _sbReport('_sbDumpMonthEntities (projects)', error, {op:'upsert', table:'projects'}); errors++; }
+    } catch(e) { _sbReport('_sbDumpMonthEntities (projects)', e, {op:'upsert', table:'projects'}); errors++; }
+  }
+
+  // 3. groups
+  const grpPayload = [];
+  allPjs.forEach(({_pj: p}) => {
+    (p.groups||[]).forEach((g, gi) => {
+      grpPayload.push({
+        id: g.id, project_id: p.id,
+        type: g.type || '',
+        sort_order: gi,
+        tl_task_id: g.tlTaskId || null,
+      });
+    });
+  });
+  if (grpPayload.length) {
+    try {
+      const { error } = await _sb.from('groups').upsert(grpPayload, {onConflict:'id'});
+      if (error) { _sbReport('_sbDumpMonthEntities (groups)', error, {op:'upsert', table:'groups'}); errors++; }
+    } catch(e) { _sbReport('_sbDumpMonthEntities (groups)', e, {op:'upsert', table:'groups'}); errors++; }
+  }
+
+  // 4. rows (batch 100 theo pattern sbPushAll)
+  const rowPayload = [];
+  allPjs.forEach(({_pj: p}) => {
+    (p.groups||[]).forEach(g => {
+      (g.rows||[]).forEach((r, ri) => {
+        rowPayload.push({
+          id: r.id, group_id: g.id,
+          staff: r.staff || '', status: r.status || 'new',
+          qty: r.qty || 0, note: r.note || '',
+          ot: r.ot || 0, ot_note: r.otNote || '',
+          date_from: r.dateFrom || null, date_to: r.dateTo || null,
+          up_time: r.upTime || null, done_at: r.doneAt || null,
+          up_score: r.upScore || null,
+          rate0: r.rate0||0, rate1: r.rate1||0, rate2: r.rate2||0,
+          rate3: r.rate3||0, rate4: r.rate4||0, rate5: r.rate5||0,
+          rate6: r.rate6||0, rate7: r.rate7||0, rate8: r.rate8||0,
+          rate9: r.rate9||0, rate10: r.rate10||0, rate11: r.rate11||0,
+          rate12: r.rate12||0, rate13: r.rate13||0,
+          rate14: r.rate14||0, rate15: r.rate15||0,
+          from_carryover: !!r.fromCarryover,
+          sort_order: ri,
+        });
+      });
+    });
+  });
+  for (let i = 0; i < rowPayload.length; i += 100) {
+    try {
+      const { error } = await _sb.from('rows').upsert(rowPayload.slice(i, i+100), {onConflict:'id'});
+      if (error) { _sbReport('_sbDumpMonthEntities (rows@'+i+')', error, {op:'upsert', table:'rows'}); errors++; }
+    } catch(e) { _sbReport('_sbDumpMonthEntities (rows@'+i+')', e, {op:'upsert', table:'rows'}); errors++; }
+  }
+
+  // 5. tl_tasks (per-project)
+  const tlPayload = [];
+  allPjs.forEach(({_pj: p}) => {
+    (p.tlTasks||[]).forEach((t, ti) => {
+      tlPayload.push({
+        id: t.id, project_id: p.id,
+        lv: t.lv || 'task', name: t.name || '',
+        start_date: t.start || null, end_date: t.end || null,
+        up_date: t.upDate || null, actual_date: t.actual || null,
+        content: t.content || '', progress: t.progress || 0,
+        status: t.status || '', dep: t.dep || '',
+        staff: Array.isArray(t.staff) ? t.staff : (t.staff ? [t.staff] : []),
+        note: t.note || '', parent_group: t.parentGroup || null,
+        sort_order: ti,
+      });
+    });
+  });
+  if (tlPayload.length) {
+    try {
+      const { error } = await _sb.from('tl_tasks').upsert(tlPayload, {onConflict:'id'});
+      if (error) { _sbReport('_sbDumpMonthEntities (tl_tasks)', error, {op:'upsert', table:'tl_tasks'}); errors++; }
+    } catch(e) { _sbReport('_sbDumpMonthEntities (tl_tasks)', e, {op:'upsert', table:'tl_tasks'}); errors++; }
+  }
+
+  console.log(`[_sbDumpMonthEntities] mid=${mid} | projects=${pjPayload.length} groups=${grpPayload.length} rows=${rowPayload.length} tl_tasks=${tlPayload.length} | errors=${errors}`);
+  return { projects: pjPayload.length, groups: grpPayload.length, rows: rowPayload.length, tlTasks: tlPayload.length, errors };
+}
+
+// Emergency utility — chạy từ Console cho data đang trong RAM chưa sync
+window._emergencyDumpMonth = async function(mid) {
+  if (!mid) { console.error('Usage: _emergencyDumpMonth("2026-06")'); return; }
+  if (!confirm('Dump toàn bộ tháng ' + mid + ' lên Supabase (projects + groups + rows + tl_tasks)?')) return;
+  try {
+    const res = await _sbDumpMonthEntities(mid);
+    console.log('✓ Done:', res);
+    toast('✓ Dump tháng ' + mid + ' xong: ' + res.projects + ' projects, ' + res.rows + ' rows', 5000);
+  } catch(e) {
+    console.error('Dump fail:', e);
+    toast('⚠ Dump fail: ' + e.message, 5000);
+  }
+};
+
 async function doAddMonth(prevMid, newMid) {
   const newMidStart = newMid + '-01';
   const todayStr = localDateStr(new Date()); // ngày tạo tháng mới
@@ -2208,13 +2445,23 @@ async function doAddMonth(prevMid, newMid) {
         (g.rows||[]).some(r => r.dateTo && r.dateTo >= todayStr)
       );
 
-      const newGroups = (p.groups||[]).map(g => ({
-        ...g,
-        rows: (g.rows||[]).map(r => {
+      // CRITICAL: tạo NEW IDs cho tlTasks/groups/rows để KHÔNG overwrite tháng cũ trên Supabase
+      // (cùng id giữa 2 tháng → upsert.eq('id') chuyển project_id → mất data tháng cũ)
+      const _tlIdMap = {};
+      const newTlTasks = (p.tlTasks||[]).map(t => {
+        const _newTlId = gid();
+        _tlIdMap[t.id] = _newTlId;
+        return { ...t, id: _newTlId };
+      });
+
+      const newGroups = (p.groups||[]).map(g => {
+        const _newGid = gid();
+        const newRows = (g.rows||[]).map(r => {
           // Giữ nguyên timeline nếu dateTo >= hôm nay (bao gồm lịch UP hôm nay)
           const rowActive = r.dateTo && r.dateTo >= todayStr && !r.doneAt;
           return {
             ...r,
+            id: gid(),                                  // NEW row id
             // Reset số lượng và đánh giá
             qty: rowActive ? (r.qty||0) : 0,
             ot: 0, otNote: '',
@@ -2230,8 +2477,14 @@ async function doAddMonth(prevMid, newMid) {
             // Đánh dấu carryover từ tháng cũ → lock (chỉ áp dụng row đã KHÔNG còn active)
             fromCarryover: rowActive ? false : true,
           };
-        })
-      }));
+        });
+        return {
+          ...g,
+          id: _newGid,                                  // NEW group id
+          tlTaskId: g.tlTaskId ? (_tlIdMap[g.tlTaskId] || null) : null,  // remap nếu có
+          rows: newRows,
+        };
+      });
 
       var _newPjId = 'pj_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
       _pjIdMap.push({ prevId: p.id, newId: _newPjId });
@@ -2243,6 +2496,7 @@ async function doAddMonth(prevMid, newMid) {
         contact:   p.contact   || '',
         mainStaff: p.mainStaff || '',
         groups:    newGroups,
+        tlTasks:   newTlTasks,
         photos:    (p.photos||[]).filter(Boolean), // copy ảnh sang tháng mới
         otLog:     [],
         notes:     '',
@@ -2262,18 +2516,22 @@ async function doAddMonth(prevMid, newMid) {
   // ── Giữ NGUYÊN p.photos của prevMid trong D để hỗ trợ "Tải đầy đủ từ lịch sử" ──
   // (storage file vẫn còn — chỉ tháng > PHOTO_RETENTION_MONTHS mới bị xóa cứng ở _sbCopyMonthPhotos)
 
-  if (window._sbReady) {
-    try {
-      const { error } = await _sb.from('months').upsert({ id: newMid, target_new: srcMonth.targetNew || 0, target_rev: srcMonth.targetRev || 0 });
-      if (error) _sbReport('doAddMonth', error, {op:'upsert', table:'months'});
-    } catch(e) { _sbReport('doAddMonth', e, {op:'upsert', table:'months'}); }
-  }
   D.activeMonth = newMid;
   activePjId = null;
   persistD();
   closeModal();
   renderAll();
-  if (window._sbReady) _sbCopyMonthPhotos(prevMid, newMid, _pjIdMap);
+  // Dump TOÀN BỘ entities (months + projects + groups + rows + tl_tasks) lên Supabase
+  // PHẢI await trước _sbCopyMonthPhotos để photo upsert không fail FK 409
+  if (window._sbReady) {
+    try {
+      const _dump = await _sbDumpMonthEntities(newMid);
+      console.log('[doAddMonth] Dumped entities:', _dump);
+    } catch(e) {
+      _sbReport('doAddMonth (dump)', e, {op:'upsert', table:'multi'});
+    }
+    _sbCopyMonthPhotos(prevMid, newMid, _pjIdMap);
+  }
 
   const newPjCount = (D.months[newMid].projects.length) + (D.months[newMid].projectsVN.length);
   toast(`✓ Sang tháng ${monthLabel(newMid)} — ${newPjCount} dự án được copy`, 4000);
