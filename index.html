@@ -622,6 +622,37 @@ body{font-family:'Be Vietnam Pro','Noto Sans JP',sans-serif;font-size:13px;backg
   @page { size: A4; margin: 1cm; }
 }
 
+/* Bảng "Chi tiết dự án" — hover sync timeline ↔ tên hạng mục */
+table.detail-tl tr.grp-row:hover > td {
+  box-shadow: inset 0 0 0 9999px rgba(254,243,199,.18);
+}
+table.detail-tl tr.grp-row:hover .grp-name-text {
+  color: #7c2d12 !important;
+  font-weight: 800 !important;
+  background: #fef3c7;
+  padding: 0 4px;
+  border-radius: 3px;
+  transition: background .12s ease, color .12s ease;
+}
+
+/* Lịch CV nhân sự — hover sync TỪNG hạng mục qua data-tid */
+/* Nền vàng tràn 1px 2 bên để liền mạch qua border <td> (mỗi task chia thành N div per cell) */
+.tl-task.tl-task-hl {
+  background: rgba(254,243,199,.55);
+  box-shadow:
+    -1px 0 0 0 rgba(254,243,199,.55),
+     1px 0 0 0 rgba(254,243,199,.55);
+  transition: background .12s ease;
+}
+.tl-task-name.tl-task-hl {
+  color: #7c2d12 !important;
+  font-weight: 800 !important;
+  background: #fef3c7 !important;
+  padding: 0 4px;
+  border-radius: 3px;
+  transition: background .12s ease, color .12s ease;
+}
+
 </style>
 </head>
 <body>
@@ -1640,14 +1671,14 @@ function freshData() {
   const mid = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   return {
     settings: {
-      staffList: ['Management トゥアン','SGN ヒエン','SGN L.フォン','HAN M.フオン','SGN ズエン','HAN ハー','HAN T.タイン','HAN H.タイン','HAN D.チュン','HAN ニュー'],
+      staffList: ['HAN トゥアン','SGN ヒエン','SGN L.フォン','HAN M.フオン','SGN ズエン','HAN ハー','HAN T.タイン','HAN H.タイン','HAN D.チュン','HAN ニュー'],
       staffProfiles: {},  // { name: {role,salaryGross,salaryNet,leaves:[{from,to,reason}],order} }
       typeList: ['外観パース','アプローチパース','エントランスパース','鳥瞰パース',
         'ラウンジパース','スタイルラウンジ','内観パース','大浴場パース',
         '和室パース','浴室パース','集会室パース','レストランパース','着色立面作成',
         'スカイラウンジ','中庭パース','風除室パース','バルコニーパース','住戸内パース'],
       contactList: ['ソン','フン','ニャー','TT.チエン','N.ビン','ニュン','カイン','Inamura','Ogura','Okuda'],
-      contactListVN: ['HAN X.グエン','HAN ソン','Management トゥアン','SGN ニャー'],
+      contactListVN: ['HAN X.グエン','HAN ソン','HAN トゥアン','SGN ニャー'],
       typeListVN: [],
       sync: {}
     },
@@ -1721,7 +1752,7 @@ function persistD() {
     });
   }
   // Migrate: init new lists nếu chưa có (data cũ)
-  if (!D.settings.contactListVN) D.settings.contactListVN = ['HAN X.グエン','HAN ソン','Management トゥアン','SGN ニャー'];
+  if (!D.settings.contactListVN) D.settings.contactListVN = ['HAN X.グエン','HAN ソン','HAN トゥアン','SGN ニャー'];
   if (!D.settings.typeListVN) D.settings.typeListVN = [];
   const json = JSON.stringify(D);
   // Check storage level after every save (throttled 30s)
@@ -2795,31 +2826,40 @@ function renderHeroStats(ci) {
 }
 
 /* MONTH OVERVIEW */
-function renderProjectTimeline(pjs) {
-  const m     = D.activeMonth;
-  const [yr, mo] = m.split('-').map(Number);
-  const daysInMonth = new Date(yr, mo, 0).getDate();
-  const todayStr = localDateStr(new Date());
-  const holidaySet = new Set(getHolidays().map(h => h.date || h));
-  const isVN = activeSection === 'vn';
+// ─────────────────────────────────────────────────────────────────────────
+// TIMELINE HELPERS — dùng chung cho renderProjectTimeline + renderStaffSchedule
+// Đảm bảo 2 bảng có window + header + bar + UP + màu đồng bộ TUYỆT ĐỐI
+// ─────────────────────────────────────────────────────────────────────────
+const _TL_CB = '1px solid #ddd';
+const _TL_PB = '2px solid #aaa';
+const _TL_TODAY_BORDER = '1px solid #ddd';         // = _TL_CB — bỏ viền today (chỉ nhận biết qua nền)
+const _TL_TODAY_BG = 'rgba(52,152,219,.22)';       // sky blue đậm vừa — rõ today, bar vẫn nổi
+const _TL_HOL_BG = 'rgba(231,76,60,.04)';
+const _TL_PREV_BG = 'rgba(0,0,0,.02)';
+const _TL_DAY_VN = ['CN','T2','T3','T4','T5','T6','T7'];
 
-  // Logic mới: Monday-aligned, Dynamic 35/42 days (cover trọn tháng đang xem)
-  const monthStart = new Date(yr, mo-1, 1);
-  monthStart.setHours(0,0,0,0);
-  const monthEnd = new Date(yr, mo, 0);  // ngày cuối tháng
-  monthEnd.setHours(0,0,0,0);
-
-  // Tìm T2 gần nhất ≤ monthStart
-  const _dow = monthStart.getDay();                // 0=CN, 1=T2, ..., 6=T7
-  const _offset = (_dow === 0) ? -6 : (1 - _dow);  // CN→-6, T2→0, ..., T7→-5
-  const windowStart = new Date(monthStart);
-  windowStart.setDate(monthStart.getDate() + _offset);
+// Khung 35/42 ngày — "1 tuần cuối tháng cũ + 4 tuần tháng mới"
+// (extend 42 nếu monthEnd hoặc today rơi ngoài 35 ngày đầu)
+function _tlComputeWindow(refMonth) {
+  const [yr, mo] = refMonth.split('-').map(Number);
+  const monthStart = new Date(yr, mo-1, 1); monthStart.setHours(0,0,0,0);
+  const monthEnd = new Date(yr, mo, 0); monthEnd.setHours(0,0,0,0);
+  // windowStart = Monday <= (monthStart - 7) → 1 tuần cũ + 4 tuần mới
+  const refDate = new Date(monthStart);
+  refDate.setDate(monthStart.getDate() - 7);
+  const _dow = refDate.getDay();
+  const _offset = (_dow === 0) ? -6 : (1 - _dow);
+  const windowStart = new Date(refDate);
+  windowStart.setDate(refDate.getDate() + _offset);
   windowStart.setHours(0,0,0,0);
 
-  // Dynamic 35 hoặc 42: nếu 35 days không cover hết monthEnd → dùng 42
+  const todayStr = localDateStr(new Date());
   const _day35End = new Date(windowStart);
-  _day35End.setDate(windowStart.getDate() + 34);   // 35 days = index 0..34
-  const numDays = (_day35End < monthEnd) ? 42 : 35;
+  _day35End.setDate(windowStart.getDate() + 34);
+  const _day35EndStr = localDateStr(_day35End);
+  // Extend 42 nếu (a) 35 ngày không cover hết tháng hoặc (b) today out of range
+  const needExtend = (_day35End < monthEnd) || (todayStr > _day35EndStr);
+  const numDays = needExtend ? 42 : 35;
 
   const allDays = [];
   for (let i = 0; i < numDays; i++) {
@@ -2827,46 +2867,136 @@ function renderProjectTimeline(pjs) {
     d.setDate(windowStart.getDate() + i);
     allDays.push(localDateStr(d));
   }
+  const holidaySet = new Set(getHolidays().map(h => h.date || h));
 
-  const CB = '1px solid #ddd';
-  const PB = '2px solid #aaa';
+  // monthSpans cho hàng header tháng — gộp colspan theo month
+  const monthSpans = [];
+  let curM = -1, mSpan = 0;
+  for (let i = 0; i < allDays.length; i++) {
+    const mNum = parseInt(allDays[i].slice(5,7));
+    if (mNum !== curM) {
+      if (curM > 0) monthSpans.push({ m: curM, span: mSpan });
+      curM = mNum; mSpan = 1;
+    } else mSpan++;
+    if (i === allDays.length-1) monthSpans.push({ m: curM, span: mSpan });
+  }
+  return { allDays, monthStart, monthEnd, numDays, yr, mo, todayStr, holidaySet, monthSpans, windowStart };
+}
 
-  // Day headers — T7+CN+ngày lễ đỏ
-  const dayHeaders = allDays.map(ds => {
-    const d   = parseInt(ds.slice(8));
+// Bar HTML — tràn -1px ra 2 bên theo pos để bar liền mạch (đè border)
+function _tlBarHtml(barColor, pos) {
+  if (!barColor) return '';
+  const barLeft  = (pos==='start'||pos==='only') ? '0' : '-1px';
+  const barRight = (pos==='end'  ||pos==='only') ? '0' : '-1px';
+  return `<div style="position:absolute;top:50%;transform:translateY(-50%);left:${barLeft};right:${barRight};height:${GANTT_BAR_H}px;background:${barColor};z-index:5"></div>`;
+}
+
+// UP marker HTML — sát TRÊN dòng kẻ, căn phải, màu theo doneAt, tooltip extendable
+function _tlUpHtml(upRow, extraTitle) {
+  if (!upRow) return '';
+  const upDone = !!upRow.doneAt;
+  const upColor = upDone ? '#374151' : '#e74c3c';
+  const base = `Dự kiến UP: ${upRow.dateTo}${upRow.doneAt ? ' · Đã UP: ' + upRow.doneAt : ' · Chưa UP'}`;
+  const upTitle = extraTitle ? `${extraTitle} · ${base}` : base;
+  return `<div title="${upTitle}" style="position:absolute;bottom:calc(50% + 1px);right:1px;font-size:9px;font-weight:900;color:${upColor};line-height:1;z-index:11;background:rgba(255,255,255,0.95);border-radius:2px;padding:0 2px;text-shadow:0 0 3px #fff,0 0 3px #fff;cursor:help">UP</div>`;
+}
+
+// Border-left ô ngày (today/isAfterToday viền xanh, isPrev mảnh)
+function _tlBorderLeft(isToday, isAfterToday, isPrev) {
+  return isToday || isAfterToday ? _TL_TODAY_BORDER
+       : isPrev ? '1px solid #eee'
+       : _TL_CB;
+}
+
+// Background ô ngày
+function _tlCellBg(isToday, isHol, isPrev) {
+  return isToday ? _TL_TODAY_BG
+       : isHol ? _TL_HOL_BG
+       : isPrev ? _TL_PREV_BG
+       : 'var(--table-bg)';
+}
+
+// Render chỉ các <th> tháng (colspan theo monthSpans) — embed vào <tr> có sẵn
+// Hỗ trợ cả format {m, span} (helper-native) lẫn {label, span} (renderMonthGantt legacy)
+function _tlMonthHeaderCells(monthSpans) {
+  return monthSpans.map(s => {
+    const label = s.label || `T${s.m}`;
+    return `<th colspan="${s.span}" style="background:var(--navy2);color:var(--gold2);font-size:10px;font-weight:700;text-align:center;padding:3px 0;border-right:1px solid rgba(255,255,255,.15);border-bottom:1px solid rgba(255,255,255,.15)">${label}</th>`;
+  }).join('');
+}
+
+// Render thead — hàng tháng (colspan theo monthSpans + padding 2 đầu) — full <tr>
+function _tlMonthHeaderRow(monthSpans, leftColspan, rightColspan) {
+  const leftPad = leftColspan>0 ? `<th colspan="${leftColspan}" style="background:var(--navy2);border-bottom:1px solid rgba(255,255,255,.15)"></th>` : '';
+  const rightPad = rightColspan>0 ? `<th colspan="${rightColspan}" style="background:var(--navy2);border-bottom:1px solid rgba(255,255,255,.15)"></th>` : '';
+  return `<tr>${leftPad}${_tlMonthHeaderCells(monthSpans)}${rightPad}</tr>`;
+}
+
+// JS delegation hover — sáng task khi rê chuột (chạy 1 lần)
+// Sync giữa timeline strip (mọi day cell) + tên trái cùng data-tid
+if (typeof document !== 'undefined' && !window._tlHoverInit) {
+  window._tlHoverInit = true;
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest('[data-tid]');
+    if (!el) return;
+    const tid = el.dataset.tid;
+    if (!tid) return;
+    document.querySelectorAll(`[data-tid="${CSS.escape(tid)}"]`).forEach(x => x.classList.add('tl-task-hl'));
+  });
+  document.addEventListener('mouseout', (e) => {
+    const el = e.target.closest('[data-tid]');
+    if (!el) return;
+    document.querySelectorAll('.tl-task-hl').forEach(x => x.classList.remove('tl-task-hl'));
+  });
+}
+
+// Render thead — hàng thứ + ngày (2 dòng nhỏ trong từng <th>)
+function _tlDayHeaderHtml(allDays, todayStr, holidaySet, cellWidth) {
+  const w = cellWidth || 16;
+  return allDays.map((ds, di) => {
+    const d = parseInt(ds.slice(8));
     const dow = new Date(ds).getDay();
     const isToday = ds === todayStr;
-    const isHol   = holidaySet.has(ds) || dow===0 || dow===6;
-    const isPrev  = ds < `${yr}-${String(mo).padStart(2,'0')}-01`; // tháng trước
-    const col  = isToday ? '#27ae60' : isHol ? '#e74c3c' : isPrev ? '#bbb' : 'var(--gray4)';
-    const bg   = isToday ? 'rgba(39,174,96,.1)' : isHol ? 'rgba(231,76,60,.06)' : isPrev ? 'rgba(0,0,0,.03)' : '';
-    const lbl  = isPrev ? `<span style="font-size:6px;opacity:.6">${ds.slice(5,7)}/</span>${d}` : d;
-    return `<th ${isToday?'id="gantt-today-overview"':''} style="width:14px;padding:2px 0;text-align:center;font-size:9px;font-weight:600;color:${col};border-bottom:${PB};border-left:${isPrev?'1px solid #eee':CB};${bg?'background:'+bg:''};white-space:nowrap">${lbl}</th>`;
+    const isRealHol = holidaySet.has(ds);
+    const isWeekend = dow===0 || dow===6;
+    const prevDs = di>0 ? allDays[di-1] : '';
+    const isAfterToday = prevDs === todayStr;
+    const col = isToday ? 'var(--navy)'
+              : isRealHol ? '#ff6b6b'
+              : isWeekend ? 'rgba(255,255,255,.45)'
+              :             'rgba(255,255,255,.9)';
+    const bg = isToday ? 'var(--gold)' : 'var(--navy)';
+    const bL = isToday || isAfterToday ? _TL_TODAY_BORDER : _TL_CB;
+    return `<th ${isToday?'id="gantt-today-overview"':''} style="width:${w}px;padding:2px 0;text-align:center;color:${col};background:${bg};border-bottom:${_TL_PB};border-left:${bL};white-space:nowrap;line-height:1.1">
+      <div style="font-size:8px;font-weight:500;opacity:.85">${_TL_DAY_VN[dow]}</div>
+      <div style="font-size:10px;font-weight:${isToday?'800':'700'}">${d}</div>
+    </th>`;
   }).join('');
+}
 
-  // Day cell builder — Layout 3 trạng thái:
-  //   A) Group KHÔNG có UP: label TOP-LEFT trên bar
-  //   B) Group có UP, cell ≠ today: label BOTTOM-LEFT dưới bar
-  //   C) Cell TODAY có UP: UP đỏ góc TOP-RIGHT, label nằm bottom (do B)
-  function dayCell(ds, barColor, pos, label, isToday, isHol, isLast, showUp, groupHasUp) {
+function renderProjectTimeline(pjs) {
+  const isVN = activeSection === 'vn';
+  // Window + header tính qua helper chung
+  const W = _tlComputeWindow(D.activeMonth);
+  const { allDays, monthStart, monthEnd, numDays, yr, mo, todayStr, holidaySet, monthSpans } = W;
+  const daysInMonth = new Date(yr, mo, 0).getDate();
+
+  const CB = _TL_CB;
+  const PB = _TL_PB;
+
+  // Day headers + month header — dùng helper chung (sync với staffSchedule)
+  const dayHeaders = _tlDayHeaderHtml(allDays, todayStr, holidaySet, 16);
+  // 4 cột trái (VP/Thông tin, Hạng mục, 作成, 修正) + 1 cột phải (Ghi chú / Khởi công)
+  const monthHeaderRow = _tlMonthHeaderRow(monthSpans, 4, 1);
+
+  // Day cell — wrap helper _tlBarHtml + _tlUpHtml để đồng bộ tuyệt đối với staffSchedule
+  function dayCell(ds, barColor, pos, isToday, isHol, isLast, isAfterToday, upRow, extraTitle) {
     const isPrev = ds < `${yr}-${String(mo).padStart(2,'0')}-01`;
-    const bg = isToday ? 'rgba(39,174,96,.07)' : isHol ? 'rgba(231,76,60,.04)' : isPrev ? 'rgba(0,0,0,.02)' : 'var(--table-bg)';
-    const br = '0';
-    // Label position dynamic: groupHasUp → đẩy xuống dưới bar để tránh UP góc trên
-    const labelPos = groupHasUp ? 'bottom:2px;left:2px;' : 'top:2px;left:2px;';
-    const labelHtml = (pos==='start' && label)
-      ? `<div style="position:absolute;${labelPos}font-size:10px;color:${barColor};white-space:nowrap;line-height:1;font-weight:700;z-index:10;pointer-events:none;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff">${label}</div>`
-      : '';
-    const bar = barColor
-      ? `<div style="position:absolute;top:50%;transform:translateY(-50%);left:0;right:0;height:${GANTT_BAR_H}px;background:${barColor};border-radius:${br}"></div>${labelHtml}`
-      : '';
-    // UP góc TOP-RIGHT, bg trắng đặc che chữ dưới (nếu có)
-    const upHtml = (isToday && showUp)
-      ? `<div style="position:absolute;top:0;right:0;font-size:9px;font-weight:900;color:#e74c3c;line-height:1;z-index:11;background:rgba(255,255,255,0.95);border-radius:2px;padding:0 2px;text-shadow:0 0 3px #fff,0 0 3px #fff">UP</div>`
-      : '';
-    const bL = isPrev ? '1px solid #eee' : CB;
-    // Container 24px → đủ chỗ label trên/dưới bar + UP góc + padding 2px tách line
-    return `<td style="width:14px;padding:2px 0;position:relative;overflow:visible;background:${bg};border-left:${bL};border-bottom:${isLast?PB:CB}"><div style="height:24px;position:relative;overflow:visible">${bar}${upHtml}</div></td>`;
+    const bg = _tlCellBg(isToday, isHol, isPrev);
+    const bL = _tlBorderLeft(isToday, isAfterToday, isPrev);
+    const bar = _tlBarHtml(barColor, pos);
+    const upHtml = _tlUpHtml(upRow, extraTitle);
+    return `<td style="width:16px;padding:2px 0;position:relative;overflow:visible;background:${bg};border-left:${bL};border-bottom:${isLast?PB:CB}"><div style="height:24px;position:relative;overflow:visible">${bar}${upHtml}</div></td>`;
   }
 
   // Sắp xếp dự án: 大阪 trước, 東京 sau
@@ -2901,13 +3031,15 @@ function renderProjectTimeline(pjs) {
       </td>
       <td style="padding:2px 3px 1px;border-bottom:none;border-right:${CB};text-align:right;font-size:8px;background:var(--table-bg)"></td>
       <td style="padding:2px 3px 1px;border-bottom:none;border-right:${CB};text-align:right;font-size:8px;background:var(--table-bg)"></td>
-      ${allDays.map(ds=>{
+      ${allDays.map((ds, di)=>{
         const dow=new Date(ds).getDay();
         const isToday=ds===todayStr, isHol=holidaySet.has(ds)||dow===0||dow===6;
         const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;
-        const bg=isToday?'rgba(39,174,96,.07)':isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';
-        const bL=isPrev?'1px solid #eee':CB;
-        return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:none"><div style="height:12px"></div></td>`;
+        const prevDs=di>0?allDays[di-1]:'';
+        const isAfterToday=prevDs===todayStr;
+        const bg=isToday?_TL_TODAY_BG:isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';
+        const bL=isToday||isAfterToday?_TL_TODAY_BORDER:isPrev?'1px solid #eee':CB;
+        return `<td style="width:16px;padding:0;background:${bg};border-left:${bL};border-bottom:none"><div style="height:12px"></div></td>`;
       }).join('')}
       <td style="border-bottom:none;border-left:${CB};background:var(--table-bg)"></td>
     </tr>` : '';
@@ -2933,30 +3065,28 @@ function renderProjectTimeline(pjs) {
         : '#666';  // đậm hơn #bbb để dễ đọc
       const grpNameWeight = grpHasPendingUp && !grpAllDone ? '700' : '500'; // tăng weight
 
-      // Pre-compute: group có UP hôm nay không (để dayCell quyết định label vị trí)
-      const _groupHasUp = (g.rows||[]).some(r => r.dateTo === todayStr && !r.doneAt);
-
       const dayCells = allDays.map((ds, di) => {
         const dow = new Date(ds).getDay();
         const isToday = ds===todayStr;
         const isHol   = holidaySet.has(ds)||dow===0||dow===6;
+        const prevDs  = di>0 ? allDays[di-1] : '';
+        const isAfterToday = prevDs === todayStr;
 
-        let barColor=null, pos='mid', label='';
-        // Gộp tất cả rows của group thành 1 bar duy nhất
+        let barColor=null, pos='mid';
+        // Gộp tất cả rows của group thành 1 bar duy nhất — bar liền mạch qua T7/CN/lễ
         const activeRows = (g.rows||[]).filter(r=>{
           if (!r.dateFrom && !r.dateTo) return false;
           const from = r.dateFrom || r.dateTo;
           const to   = r.dateTo   || r.dateFrom;
-          if (from<=ds && ds<=to && !isHol) return true;
+          if (from<=ds && ds<=to) return true;
           if (!p._carryover && r.dateTo && r.dateTo < `${yr}-${String(mo).padStart(2,'0')}-01` && !r.doneAt) {
-            return di===0 && !isHol;
+            return di===0;
           }
           return false;
         });
         const activeRow = activeRows[0] || null;
 
         if (activeRow) {
-          // Tính range tổng của group (tất cả rows)
           const allFroms = (g.rows||[]).map(r=>r.dateFrom||r.dateTo).filter(Boolean).sort();
           const allTos   = (g.rows||[]).map(r=>r.dateTo||r.dateFrom).filter(Boolean).sort();
           const from = allFroms[0]||'', to = allTos[allTos.length-1]||'';
@@ -2966,17 +3096,20 @@ function renderProjectTimeline(pjs) {
             : isVN ? (activeRow.status==='new'?'#7c3aed':'#db2777')
             :        (activeRow.status==='new'?'#5a9a35':'#d4900a');
 
-          const prevDs = di>0 ? allDays[di-1] : '';
-          const nextDs = di<allDays.length-1 ? allDays[di+1] : '';
-          const prevHol = !prevDs || holidaySet.has(prevDs) || new Date(prevDs).getDay()===0 || new Date(prevDs).getDay()===6;
-          const nextHol = !nextDs || holidaySet.has(nextDs) || new Date(nextDs).getDay()===0 || new Date(nextDs).getDay()===6;
           const toOutOfRange = to > allDays[allDays.length-1];
-          const isStart=from===ds||prevHol, isEnd=(to===ds||nextHol||toOutOfRange);
-          pos=isStart&&isEnd?'only':isStart?'start':isEnd?'end':'mid';
-          if (isStart) label = (g.type||'').replace('パース','').replace('作成','');
+          // Carryover single-cell: bar render ở di===0 nhưng to < ds (deadline đã qua)
+          const isCarryoverOnly = (di===0 && to && to < ds);
+          const isStart = isCarryoverOnly || from===ds || di===0;
+          const isEnd   = isCarryoverOnly || to===ds || toOutOfRange;
+          pos = isStart&&isEnd ? 'only' : isStart ? 'start' : isEnd ? 'end' : 'mid';
         }
-        const showUp = isToday && _groupHasUp;
-        return dayCell(ds, barColor, pos, label, isToday, isHol, isLastGrp, showUp, _groupHasUp);
+
+        // UP marker: cell = dateTo của bất kỳ row nào — helper _tlUpHtml tự tính màu+tooltip
+        // Tooltip chỉ bổ sung TÊN NHÂN SỰ (bảng này đã hiện tên dự án + hạng mục cột trái)
+        const upRow = (g.rows||[]).find(r => r.dateTo === ds) || null;
+        const extraTitle = upRow && upRow.staff ? upRow.staff : '';
+
+        return dayCell(ds, barColor, pos, isToday, isHol, isLastGrp, isAfterToday, upRow, extraTitle);
       }).join('');
 
       // Ghi chú từ tất cả row trong hạng mục
@@ -2989,11 +3122,11 @@ function renderProjectTimeline(pjs) {
       const trDoneStyle = (isVN && isFirstGrp)
         ? (allDone ? `color:${DONE_COLOR};` : '')
         : grpDoneStyle;
-      return `<tr style="${trDoneStyle}">
+      return `<tr class="grp-row" style="${trDoneStyle}">
         ${vnInfoCell}
         ${!isVN ? `<td style="padding:0 4px 0;border-bottom:${rowBorderB};border-right:${CB};border-left:${CB};background:var(--table-bg)"></td>` : ''}
         <td style="padding:1px 4px 1px;border-bottom:${rowBorderB};border-right:${CB};${isVN?'border-left:'+CB+';':''}background:var(--table-bg);vertical-align:middle">
-          <div style="font-size:11px;color:${grpNameColor};font-weight:${grpNameWeight};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px;line-height:1.2;">${x(g.type||'—')}${grpAllDone?' ✓':''}</div>
+          <div class="grp-name-text" style="font-size:11px;color:${grpNameColor};font-weight:${grpNameWeight};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:165px;line-height:1.2;">${x(g.type||'—')}${grpAllDone?' ✓':''}</div>
         </td>
         <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:10px;font-weight:600;color:#27ae60;background:var(--table-bg);vertical-align:middle">${grpNew||''}</td>
         <td style="padding:1px 3px;border-bottom:${rowBorderB};border-right:${CB};text-align:right;font-size:10px;font-weight:600;color:#e67e22;background:var(--table-bg);vertical-align:middle">${grpRev||''}</td>
@@ -3012,7 +3145,7 @@ function renderProjectTimeline(pjs) {
     const fallbackRow = (isVN && allGrpRows.length === 0) ? `<tr style="${rowDim}">
       <td style="vertical-align:top;padding:0;border-right:${CB};border-left:${CB};border-bottom:${PB}">${renderVNInfoPanel(p)}</td>
       <td style="padding:4px 6px;border-bottom:${PB};border-right:${CB};color:#aaa;font-size:9px;font-style:italic;background:var(--table-bg)" colspan="3">Chưa có hạng mục</td>
-      ${allDays.map(ds=>{const dow=new Date(ds).getDay();const isToday=ds===todayStr,isHol=holidaySet.has(ds)||dow===0||dow===6;const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;const bg=isToday?'rgba(39,174,96,.07)':isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';const bL=isPrev?'1px solid #eee':CB;return `<td style="width:14px;padding:0;background:${bg};border-left:${bL};border-bottom:${PB}"><div style="height:24px"></div></td>`;}).join('')}
+      ${allDays.map((ds,di)=>{const dow=new Date(ds).getDay();const isToday=ds===todayStr,isHol=holidaySet.has(ds)||dow===0||dow===6;const isPrev=ds<`${yr}-${String(mo).padStart(2,'0')}-01`;const prevDs=di>0?allDays[di-1]:'';const isAfterToday=prevDs===todayStr;const bg=isToday?_TL_TODAY_BG:isHol?'rgba(231,76,60,.04)':isPrev?'rgba(0,0,0,.02)':'var(--table-bg)';const bL=isToday||isAfterToday?_TL_TODAY_BORDER:isPrev?'1px solid #eee':CB;return `<td style="width:16px;padding:0;background:${bg};border-left:${bL};border-bottom:${PB}"><div style="height:24px"></div></td>`;}).join('')}
       <td style="border-bottom:${PB};border-left:${CB};background:var(--table-bg)"></td>
     </tr>` : '';
     return pjRow + grpRows + fallbackRow;
@@ -3023,15 +3156,16 @@ function renderProjectTimeline(pjs) {
   const sumRev = pjs.reduce((s,p)=>s+(p._carryover?0:totalRev(p)),0);
   const NC = daysInMonth + 5;
 
-  return `<table style="border-collapse:collapse;width:max-content;min-width:100%;font-size:11px;border:1px solid #ccc">
+  return `<table class="detail-tl" style="border-collapse:collapse;width:max-content;min-width:100%;font-size:11px;border:1px solid #ccc">
     <colgroup>
       <col style="width:${isVN?'240px':'34px'}">
       <col style="width:175px">
       <col style="width:26px"><col style="width:26px">
-      ${allDays.map(()=>'<col style="width:14px">').join('')}
+      ${allDays.map(()=>'<col style="width:16px">').join('')}
       <col style="width:90px">
     </colgroup>
     <thead>
+      ${monthHeaderRow}
       <tr style="background:var(--navy)">
         <th style="text-align:${isVN?'left':'center'};padding:4px ${isVN?'8':'3'}px;font-size:9px;color:${isVN?'#FFC000':'rgba(255,255,255,.7)'};border-bottom:${PB};border-right:${CB};white-space:nowrap">${isVN?'Thông tin dự án':'VP'}</th>
         <th style="text-align:left;padding:4px 6px;font-size:9px;color:rgba(255,255,255,.9);border-bottom:${PB};border-right:${CB};white-space:nowrap">${isVN?'Hạng mục':'Dự án / Hạng mục'}</th>
@@ -3048,9 +3182,12 @@ function renderProjectTimeline(pjs) {
         <td style="padding:4px 6px;font-size:10px;font-weight:700;color:#FFC000;border-top:${PB};border-right:${CB}">Tổng cộng</td>
         <td style="text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#7CFC00;border-top:${PB};border-right:${CB}">${sumNew}</td>
         <td style="text-align:right;padding:4px 3px;font-size:10px;font-weight:700;color:#FFC000;border-top:${PB};border-right:${CB}">${sumRev}</td>
-        ${allDays.map(ds=>{
+        ${allDays.map((ds,di)=>{
           const isToday=ds===todayStr;
-          return `<td style="width:14px;border-top:${PB};border-left:${CB};${isToday?'background:rgba(39,174,96,.2);':''}"></td>`;
+          const prevDs=di>0?allDays[di-1]:'';
+          const isAfterToday=prevDs===todayStr;
+          const bL=isToday||isAfterToday?_TL_TODAY_BORDER:CB;
+          return `<td style="width:16px;border-top:${PB};border-left:${bL};${isToday?'background:'+_TL_TODAY_BG+';':''}"></td>`;
         }).join('')}
         <td style="border-top:${PB};border-left:${CB}"></td>
       </tr>
@@ -3330,36 +3467,25 @@ function renderMonthGantt(pjs) {
     if(r.staff && staffMap[r.staff]) staffMap[r.staff].push(r);
   });
 
-  // Day VN names
-  const dayVN = ['CN','T2','T3','T4','T5','T6','T7'];
-
-  // ── Month header spans ──
+  // B5 — Month spans (format {m, span} đồng bộ helper) + fix bug i===20 thành days.length-1
   let curMo=-1, mSpan=0;
   const monthSpans=[];
   days.forEach((d,i)=>{
     if(d.getMonth()!==curMo){
-      if(curMo>=0) monthSpans.push({label:['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'][curMo],span:mSpan});
+      if(curMo>=0) monthSpans.push({m: curMo+1, span: mSpan});
       curMo=d.getMonth(); mSpan=1;
     } else mSpan++;
-    if(i===20) monthSpans.push({label:['T1','T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12'][curMo],span:mSpan});
+    if(i===days.length-1) monthSpans.push({m: curMo+1, span: mSpan});
   });
-  const hdrMonths = monthSpans.map(m=>`<th colspan="${m.span}" style="background:var(--navy2);color:var(--gold2);font-size:10px;text-align:center;padding:3px;border-right:1px solid rgba(255,255,255,.15)">${m.label}</th>`).join('');
+  const hdrMonths = _tlMonthHeaderCells(monthSpans);
 
-  // Day header
-  const hdrDays = days.map((d,i)=>{
-    const dStr=dk(d), isToday=dStr===todayStr, isSun=d.getDay()===0, isSat=d.getDay()===6;
-    const isHoliday=!!holidayMap[dStr], isPast=dStr<todayStr;
-    const isWeekBorder=d.getDay()===1&&i>0;
-    const bg=isToday?'var(--gold)':isHoliday?'#c0392b':isPast?'#2c3e50':'var(--navy)';
-    const col=isToday?'var(--navy)':isSun||isSat||isHoliday?'rgba(255,255,255,.45)':isPast?'rgba(255,255,255,.5)':'rgba(255,255,255,.85)';
-    const ttl=isHoliday?` title="${holidayMap[dStr]}"`:isToday?' title="Hôm nay"':'';
-    return `<th${ttl}${isToday?' id="gantt-today-month"':''} style="min-width:26px;max-width:34px;text-align:center;font-size:9px;padding:2px 1px;background:${bg};color:${col};font-weight:${isToday?'800':'400'};border-left:${isWeekBorder?'2px solid rgba(255,255,255,.3)':'none'};opacity:${isPast&&!isToday?0.75:1}">
-      <div>${isHoliday?'🔴':dayVN[d.getDay()]}</div><div style="font-size:10px;font-weight:${isToday?800:600}">${d.getDate()}</div>
-    </th>`;
-  }).join('');
+  // B6 — Day header dùng helper (style đồng bộ projectTimeline)
+  const allDaysStr = days.map(d => dk(d));
+  const holidaySet = new Set(Object.keys(holidayMap));
+  const hdrDays = _tlDayHeaderHtml(allDaysStr, todayStr, holidaySet, 22);
 
   // ── Staff rows — sắp xếp theo thứ tự JP/VN ──
-  const STAFF_ORDER = ['Management トゥアン','SGN ヒエン','SGN L.フォン','HAN M.フオン','SGN ズエン','HAN ハー','HAN T.タイン','HAN H.タイン','HAN D.チュン','HAN ニュー'];
+  const STAFF_ORDER = ['HAN トゥアン','SGN ヒエン','SGN L.フォン','HAN M.フオン','SGN ズエン','HAN ハー','HAN T.タイン','HAN H.タイン','HAN D.チュン','HAN ニュー'];
   const sortedStaff = [...D.settings.staffList].sort((a,b)=>{
     const ia=STAFF_ORDER.indexOf(a),ib=STAFF_ORDER.indexOf(b);
     if(ia===-1&&ib===-1)return 0;if(ia===-1)return 1;if(ib===-1)return -1;return ia-ib;
@@ -3426,6 +3552,9 @@ function renderMonthGantt(pjs) {
       const dkStr=dk(d), isToday=dkStr===todayStr, isSun=d.getDay()===0, isSat=d.getDay()===6;
       const isPast=dkStr<todayStr, isHoliday=!!holidayMap[dkStr];
       const isWeekBorder=d.getDay()===1&&i>0;
+      // B9: detect cell ngay SAU today để vẽ viền xanh 2 bên cột today
+      const prevDate = i>0 ? days[i-1] : null;
+      const isAfterToday = prevDate && dk(prevDate) === todayStr;
       const isOnLeave = getStaffLeaves(staff).some(l=>{
         const lf=l.from||l.to, lt=l.to||l.from;
         return lf&&lt&&lf<=dkStr&&lt>=dkStr;
@@ -3439,8 +3568,17 @@ function renderMonthGantt(pjs) {
         return from&&to&&from<=dkStr&&to>=dkStr;
       });
 
-      const bg = isOnLeave?'rgba(231,76,60,.1)':isHoliday?'rgba(192,57,43,.07)':isToday?'rgba(255,192,0,.1)':isPast?'rgba(0,0,0,.02)':isSun||isSat?'rgba(231,76,60,.04)':'#fff';
-      const borderL = isWeekBorder?'2px solid #ccc':'1px solid #ddd';
+      // B9: today bg xanh .15 (đồng bộ projectTimeline), onLeave/holiday vẫn ưu tiên
+      const bg = isOnLeave ? 'rgba(231,76,60,.1)'
+        : isHoliday ? 'rgba(192,57,43,.07)'
+        : isToday ? _TL_TODAY_BG
+        : isPast ? 'rgba(0,0,0,.02)'
+        : isSun||isSat ? 'rgba(231,76,60,.04)'
+        : '#fff';
+      // B9: viền xanh 2 bên cột today (qua border-left của today + isAfterToday)
+      const borderL = (isToday || isAfterToday) ? _TL_TODAY_BORDER
+        : isWeekBorder ? '2px solid #ccc'
+        : '1px solid #ddd';
       const cellH = taskCount * ROW_H;
 
       // Xây dựng từng dòng per task
@@ -3448,11 +3586,12 @@ function renderMonthGantt(pjs) {
         const from=r.dateFrom||r.dateTo, to=r.dateTo||r.dateFrom;
         const active = from&&to&&from<=dkStr&&to>=dkStr;
         const isActuallyDone = !!(r.doneAt);
-        const isTodayUp = r.dateTo===todayStr && !isActuallyDone;
         const isDoneByDate = r.dateTo && r.dateTo<todayStr && !isActuallyDone;
         const isNew = r.status==='new';
+        // B7: pos cho bar liền mạch -1px qua _tlBarHtml (đồng bộ projectTimeline)
         const isFirst = from===dkStr || dkStr===startStr;
-        const isLast  = to===dkStr;
+        const isLast  = to===dkStr || dkStr===endStr;
+        const pos = isFirst && isLast ? 'only' : isFirst ? 'start' : isLast ? 'end' : 'mid';
         const top = ri * ROW_H;
 
         let inner = '';
@@ -3460,19 +3599,13 @@ function renderMonthGantt(pjs) {
           const bc = (isActuallyDone||isDoneByDate) ? DONE_BAR_COLOR
             : r.isVN ? (isNew?'#7c3aed':'#db2777')
             :          (isNew?'#5a9a35':'#d4900a');
-          const br = isFirst&&isLast?'2px':isFirst?'2px 0 0 2px':isLast?'0 2px 2px 0':'0';
-          const typeName = (r.groupName||'').replace('パース','').replace('作成','').trim();
-          // Label: trên cùng dòng, bar ở giữa-dưới, UP ở trên bar
-          const labelHtml = isFirst
-            ? `<div style="position:absolute;top:1px;left:2px;font-size:9px;color:${bc};white-space:nowrap;font-weight:700;z-index:10;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff">[${r.pjNum||'?'}] ${typeName}</div>`
-            : '';
-          const upHtml = (isToday && isTodayUp)
-            ? `<div style="position:absolute;top:1px;right:2px;font-size:9px;font-weight:900;color:#e74c3c;z-index:11;text-shadow:0 0 3px #fff">UP</div>`
-            : '';
-          // Bar nằm phía dưới dòng, có khoảng cách với chữ
-          inner = `${labelHtml}${upHtml}<div style="position:absolute;bottom:3px;left:0;right:0;height:${GANTT_BAR_H}px;background:${bc};border-radius:${br}"></div>`;
+          // B2: UP marker khi cell = dateTo của task (tooltip chỉ bổ sung tên dự án)
+          const showUpHere = r.dateTo === dkStr;
+          const extraTitle = r.pjName || '';
+          const upHtml = showUpHere ? _tlUpHtml(r, extraTitle) : '';
+          inner = `${upHtml}${_tlBarHtml(bc, pos)}`;
         }
-        return `<div style="position:absolute;top:${top}px;left:0;right:0;height:${ROW_H}px;overflow:visible">${inner}</div>`;
+        return `<div data-tid="${r.id}" class="tl-task" style="position:absolute;top:${top}px;left:0;right:0;height:${ROW_H}px;overflow:visible">${inner}</div>`;
       });
 
       // Trip bar riêng dòng nếu không có task
@@ -3495,7 +3628,7 @@ function renderMonthGantt(pjs) {
           const isNew=r.status==='new';
           const bc=r.isVN?(isNew?'#7c3aed':'#db2777'):(isNew?'#5a9a35':'#d4900a');
           const typeName=(r.groupName||'').replace('パース','').replace('作成','').trim();
-          return `<div style="font-size:8px;color:${bc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;line-height:${ROW_H}px">[${r.pjNum||'?'}] ${typeName}</div>`;
+          return `<div data-tid="${r.id}" class="tl-task-name" style="font-size:8px;color:${bc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;line-height:${ROW_H}px;cursor:default">[${r.pjNum||'?'}] ${typeName}</div>`;
         }).join('')}</div>`:''}
       </td>
       <td style="background:${nameBg};padding:4px 2px;border-right:1px solid #bbb;vertical-align:middle;text-align:center;min-width:36px">
@@ -3521,7 +3654,7 @@ function renderMonthGantt(pjs) {
   }).join('');
 
   return `<div style="overflow-x:auto">
-  <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">
+  <table class="detail-tl" style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">
     <thead>
       <tr>
         <th style="background:var(--navy);width:140px;min-width:130px;padding:4px 8px;color:rgba(255,255,255,.7);font-size:10px;text-align:left">Nhân sự</th>
@@ -6287,10 +6420,9 @@ function renderStaffSchedule(p) {
           : isNew ? '#5a9a35' : '#d4900a';
         const isFirstDay = r.dateFrom===dk;
         const isLastDay  = r.dateTo===dk;
-        // Label phía trên, bar mảnh phía dưới (giống renderProjectTimeline_VN / renderMonthGantt)
+        // B1: Bỏ label trên bar (đồng bộ với projectTimeline). Bar mảnh ở dưới container.
         return `<div title="${x(r.groupName)} · ${isNew?'Làm mới':'Sửa lại'} · ${r.dateFrom||'?'} → ${r.dateTo||'?'}"
           style="position:relative;height:13px;margin:1px 0;overflow:visible">
-          ${isFirstDay?`<div style="position:absolute;top:0;left:1px;font-size:11px;color:${barColor};line-height:1;font-weight:700;white-space:nowrap;z-index:2;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff;pointer-events:none">${x(r.groupName.substring(0,6))}</div>`:''}
           <div style="position:absolute;bottom:0;left:0;right:0;height:${GANTT_BAR_H}px;background:${barColor};border-radius:${isFirstDay?'1px 0 0 1px':isLastDay?'0 1px 1px 0':'0'}"></div>
         </div>`;
       }).join('');
@@ -6322,9 +6454,9 @@ function renderStaffSchedule(p) {
     const nameBg   = isPastStaff ? '#f9f9f9' : 'var(--gray1)';
     const nameColor= isPastStaff ? DONE_COLOR : 'var(--navy)';
     const rowDoneStyle = isPastStaff ? `color:${DONE_COLOR};` : '';
-    return `<tr style="border-bottom:1px solid var(--gray2);${rowDoneStyle}">
+    return `<tr class="grp-row" style="border-bottom:1px solid var(--gray2);${rowDoneStyle}">
       <td style="background:${nameBg};padding:5px 8px;min-width:90px;border-right:1px solid var(--gray2);vertical-align:top">
-        <div style="font-weight:700;font-size:13px;color:${nameColor};">${staff}</div>
+        <div class="grp-name-text" style="font-weight:700;font-size:13px;color:${nameColor};">${staff}</div>
         ${isPastStaff?`<div style="font-size:8px;color:${DONE_COLOR}">Đã hoàn thành</div>`:''}
         ${taskSummary}
       </td>
@@ -6344,7 +6476,7 @@ function renderStaffSchedule(p) {
 
   return `
   <div style="overflow-x:auto">
-  <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:870px">
+  <table class="detail-tl" style="width:100%;border-collapse:collapse;font-size:11px;min-width:870px">
     <thead>
       <tr>
         <th style="background:var(--navy);width:90px;min-width:90px;padding:4px 8px;color:rgba(255,255,255,.7);font-size:10px;text-align:left">Nhân sự</th>
@@ -7845,8 +7977,8 @@ function renderContractBlock(staffName, prof, todayStr) {
 function getStaffProfile(name) {
   if (!D.settings.staffProfiles) D.settings.staffProfiles = {};
   if (!D.settings.staffProfiles[name]) D.settings.staffProfiles[name] = {role:'',salaryGross:0,salaryNet:0,leaves:[],order:99,contractEnd:'',status:'active',leaveDate:'',avatarUrl:''};
-  // Auto-set Management role và order=0 cho Management トゥアン
-  if (name === 'Management トゥアン') {
+  // Auto-set Management role và order=0 cho HAN トゥアン
+  if (name === 'HAN トゥアン') {
     const p = D.settings.staffProfiles[name];
     if (!p.role) p.role = 'Management';
     if (!p.order || p.order === 99) p.order = 0;
@@ -7898,7 +8030,7 @@ function getActiveStaff()  { return (D.settings.staffList || []).filter(function
 function getLeavingStaff() { return (D.settings.staffList || []).filter(function(n){ return isStaffLeaving(n); }); }
 function getLeftStaff()    { return (D.settings.staffList || []).filter(function(n){ return isStaffLeft(n);    }); }
 
-// Helper: staffList đã sắp xếp — Management トゥアン luôn đứng đầu
+// Helper: staffList đã sắp xếp — HAN トゥアン luôn đứng đầu
 // Lấy tên nhân sự không có ký hiệu VP (SGN/HAN/Management → chỉ lấy phần tên)
 // Staff Card Redesign Phase A: avatar helpers
 function getStaffInitial(name) {
@@ -7906,9 +8038,13 @@ function getStaffInitial(name) {
   var clean = name.replace(/^(Management|SGN|HAN|HCM)\s+/, '').trim();
   return (clean[0] || '?').toUpperCase();
 }
+// HAN トゥアン giữ visual Management dù prefix HAN (role Management, office Hanoi)
+function isManagementStyle(name) {
+  return name === 'HAN トゥアン' || (!!name && name.startsWith('Management'));
+}
 function getStaffAvatarColor(name) {
   if (!name) return {bg:'#F1EFE8', border:'#D3D1C7', text:'#444441'};
-  if (name.startsWith('Management')) return {bg:'#FAEEDA', border:'#FAC775', text:'#854F0B'};
+  if (isManagementStyle(name)) return {bg:'#FAEEDA', border:'#FAC775', text:'#854F0B'};
   if (name.startsWith('SGN'))        return {bg:'#E1F5EE', border:'#9FE1CB', text:'#0F6E56'};
   if (name.startsWith('HAN'))        return {bg:'#EEEDFE', border:'#CECBF6', text:'#3C3489'};
   return {bg:'#F1EFE8', border:'#D3D1C7', text:'#444441'};
@@ -7978,8 +8114,8 @@ function sortedStaffOptionsHtml(selectedName) {
 
 function sortedStaffList() {
   return [...D.settings.staffList].sort((a,b) => {
-    if (a==='Management トゥアン') return -1;
-    if (b==='Management トゥアン') return 1;
+    if (a==='HAN トゥアン') return -1;
+    if (b==='HAN トゥアン') return 1;
     const pa=getStaffProfile(a), pb=getStaffProfile(b);
     return (pa.order||99)-(pb.order||99);
   });
@@ -9403,10 +9539,10 @@ function renderStaffPage() {
     (p.otLog||[]).forEach(e=>{if(e.staff&&sd[e.staff])sd[e.staff].ot+=(e.hours||0);});
   });
 
-  // Sort staff: Management トゥアン luôn đứng đầu, sau đó theo profile order
+  // Sort staff: HAN トゥアン luôn đứng đầu, sau đó theo profile order
   const sortedStaff = [...D.settings.staffList].sort((a,b)=>{
-    if (a==='Management トゥアン') return -1;
-    if (b==='Management トゥアン') return 1;
+    if (a==='HAN トゥアン') return -1;
+    if (b==='HAN トゥアン') return 1;
     const pa=getStaffProfile(a), pb=getStaffProfile(b);
     return (pa.order||99)-(pb.order||99);
   });
@@ -9586,7 +9722,7 @@ function renderStaffPage() {
       const _monthShort = mid.replace(/^\d{4}-/,'').replace(/^0/,'');
       const _scoreObj = (typeof calcStaffScore === 'function') ? calcStaffScore(s) : {score:0};
       // Redesign: card bg màu office nhạt
-      const _cardBg = s.startsWith('Management') ? '#FEFCF5'
+      const _cardBg = isManagementStyle(s) ? '#FEFCF5'
                     : s.startsWith('SGN')        ? '#F4FBF8'
                     : s.startsWith('HAN')        ? '#F8F7FE'
                     : '#fff';
@@ -10428,9 +10564,9 @@ async function saveSettings() {
             return {
               full_name: name,
               short_name: '',
-              office: name.startsWith('SGN') ? 'SGN'
+              office: isManagementStyle(name) ? 'Management'
+                    : name.startsWith('SGN') ? 'SGN'
                     : name.startsWith('HAN') ? 'HAN'
-                    : name.startsWith('Management') ? 'Management'
                     : '',
               role: '',
               salary_gross: 0,
@@ -10628,7 +10764,7 @@ function renderStaffDetailModalContent(s) {
   const _avt = getStaffAvatarColor(s);
   const _ini = getStaffInitial(s);
   const _roleTxt = prof.role || '';
-  const _office = s.startsWith('Management')?'MANAGEMENT':s.startsWith('SGN')?'SAIGON':s.startsWith('HAN')?'HANOI':'OTHER';
+  const _office = isManagementStyle(s)?'MANAGEMENT':s.startsWith('SGN')?'SAIGON':s.startsWith('HAN')?'HANOI':'OTHER';
   const _monthShort = mid.replace(/^\d{4}-/,'').replace(/^0/,'');
   const _scoreObj = (typeof calcStaffScore==='function') ? calcStaffScore(s) : {score:0};
   const si = 'modal';
