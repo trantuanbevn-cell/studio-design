@@ -7072,8 +7072,41 @@ function openEditProject(id) {
 function confirmEditPj(id) {
   const p=getPj(id); if(!p) return;
   const isVN = activeSection === 'vn';
-  p.nameVN=(document.getElementById('ep-nVN')?.value||'').trim();
-  p.nameJP=(document.getElementById('ep-nJP')?.value||'').trim();
+  // Capture OLD names TRƯỚC update — để match identity các tháng khác
+  const oldVN = p.nameVN || '';
+  const oldJP = p.nameJP || '';
+  const newVN = (document.getElementById('ep-nVN')?.value||'').trim();
+  const newJP = (document.getElementById('ep-nJP')?.value||'').trim();
+  const nameChanged = (oldVN !== newVN) || (oldJP !== newJP);
+
+  // Tìm projects khác cùng identity (strict: CẢ 2 name khớp old, tránh false positive)
+  const matched = [];
+  if (nameChanged) {
+    Object.entries(D.months).forEach(([mid, m]) => {
+      (m.projects||[]).forEach(q => {
+        if (q.id !== id && (q.nameVN||'') === oldVN && (q.nameJP||'') === oldJP) {
+          matched.push({ p: q, mid, section: 'jp' });
+        }
+      });
+      (m.projectsVN||[]).forEach(q => {
+        if (q.id !== id && (q.nameVN||'') === oldVN && (q.nameJP||'') === oldJP) {
+          matched.push({ p: q, mid, section: 'vn' });
+        }
+      });
+    });
+  }
+
+  // Confirm dialog nếu sync ≥ 2 tháng (current + ≥ 1 tháng khác)
+  const otherMonthsCount = new Set(matched.map(x => x.mid)).size;
+  if (nameChanged && otherMonthsCount >= 1) {
+    const totalMonths = otherMonthsCount + 1;
+    if (totalMonths >= 2) {
+      if (!confirm(`Tên dự án sẽ đồng bộ ở ${totalMonths} tháng (${matched.length + 1} dự án). Tiếp tục?`)) return;
+    }
+  }
+
+  // Update project hiện tại với TẤT CẢ field
+  p.nameVN = newVN; p.nameJP = newJP;
   p.office=(document.getElementById('ep-off')?.value||'');
   p.contact=(document.getElementById('ep-ct')?.value||'').trim();
   p.mainStaff=(document.getElementById('ep-st')?.value||'');
@@ -7085,8 +7118,22 @@ function confirmEditPj(id) {
     p.constructionStart= (document.getElementById('ep-constructionStart')?.value||'');
     p.constructionEnd  = (document.getElementById('ep-constructionEnd')?.value||'');
   }
-  save(); closeModal(); renderSidebar(); renderContent(); toast('✓ Đã lưu');
-  _sbAuditLog('update', 'projects', id, 'Sửa dự án: "' + (p.nameVN || p.nameJP || id) + '"');
+
+  // Sync CHỈ NAME sang các projects khác (giữ office/contact/... riêng từng tháng)
+  let syncedCount = 0;
+  if (nameChanged) {
+    matched.forEach(({ p: q, mid, section }) => {
+      q.nameVN = newVN; q.nameJP = newJP;
+      _sbSaveProject(q, mid, section);  // sync trực tiếp Supabase (bypass approval cross-month)
+      syncedCount++;
+    });
+  }
+
+  save(); closeModal(); renderSidebar(); renderContent();
+  toast(syncedCount > 0 ? `✓ Đã lưu + đồng bộ tên ở ${syncedCount} tháng khác` : '✓ Đã lưu');
+  _sbAuditLog('update', 'projects', id, 'Sửa dự án: "' + (p.nameVN || p.nameJP || id) + '"' + (syncedCount > 0 ? ` (sync ${syncedCount} tháng)` : ''));
+
+  // Current month: theo approval workflow như cũ
   if (_needsApproval()) {
     _sbQueueChange('Sửa dự án: "' + (p.nameVN || p.nameJP || id) + '"',
       'projects', 'upsert', id,
