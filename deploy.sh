@@ -68,5 +68,5 @@ git push
 
 echo ""
 echo "✅ Deploy thành công!"
-echo "🌐 https://trantuanbevn-cell.github.io/studio-design"
+echo "🌐 https://gendaisougo-vietnam.github.io/gsa"
 echo "⏰ Đợi ~30 giây để GitHub Pages cập nhật."

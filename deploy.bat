@@ -86,7 +86,7 @@ if errorlevel 1 (
 
 echo.
 echo ✅ Deploy thanh cong!
-echo 🌐 https://trantuanbevn-cell.github.io/studio-design
+echo 🌐 https://gendaisougo-vietnam.github.io/gsa
 echo ⏰ Doi ~30 giay de GitHub Pages cap nhat.
 
 endlocal
